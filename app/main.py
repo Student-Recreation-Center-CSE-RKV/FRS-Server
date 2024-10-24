@@ -1,15 +1,18 @@
 from fastapi import FastAPI
-from models.UserModel import User
+from app.routes.index import router as main_router  
+app = FastAPI()
 
 
-app=FastAPI()
+
+app.include_router(main_router,prefix='/api')
 
 
-@app.get("/")
-async def root():
-  return{"message":"Hello "}
+# @app.get("/")
+# async def home():
+#     return await api()
 
-
-@app.get("/get")
-async def root():
-  return{"message":"Hello "}
+# @app.get("/api")
+# async def api():
+#     temp = collection.find_one({})
+#     print(temp)
+#     return 

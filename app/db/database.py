@@ -5,7 +5,8 @@ import os
 from dotenv import load_dotenv
 
 
-BASEDIR = r'C:\Users\sathe\OneDrive\Documents\FRS-Server\app'
+
+BASEDIR = r'/home/rguktrkvalley/Downloads/app'
 load_dotenv(os.path.join(BASEDIR, '.env'))
 
 
@@ -21,7 +22,6 @@ except Exception as e:
 
 db = client.get_database("Sample_mflix")
 collection = db.get_collection("comments")
-
 
 
 

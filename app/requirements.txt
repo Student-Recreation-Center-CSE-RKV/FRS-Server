@@ -4,3 +4,7 @@ motor
 pymongo==4.0.1
 bson
 uvicorn[standard]==0.15.0
+python-dotenv
+python-jose[cryptography]
+python-multipart
+

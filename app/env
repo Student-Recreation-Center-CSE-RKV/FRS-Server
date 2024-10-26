@@ -1,0 +1,4 @@
+
+
+mongoDB_url = mongodb+srv://FRS_Database:SRC_FRS_2024@frscluster.nees5.mongodb.net/?retryWrites=true&w=majority&appName=FRSCluster
+

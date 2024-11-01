@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from db import database
+from db.database import admin
 from typing import Optional
 """from models import user as models
 from utils import security
@@ -26,12 +26,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 #client = AsyncIOMotorClient(database.uri)
 
-dbs = database.db
-collection=database.collection
-
-db=collection
-
-print(db)
+db = admin
 # Secret key and algorithm for JWT
 
 #SECRET_KEY = os.getenv("SECRET_KEY")

@@ -1,3 +1,3 @@
-from .index import get_name
+from .index import get_name,router
 
-__all = ['get_name']
+__all = ['get_name',"router"]

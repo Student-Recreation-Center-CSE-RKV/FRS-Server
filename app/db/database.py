@@ -6,8 +6,7 @@ from dotenv import load_dotenv
 
 
 
-BASEDIR = r'/home/rguktrkvalley/Downloads/app'
-load_dotenv(os.path.join(BASEDIR, '.env'))
+BASEDIR = r'C:\\Users\\sathe\\OneDrive\\Documents\\FRS-Server\\app\\.env'
 
 
 uri = os.getenv("mongoDB_url")
@@ -20,8 +19,10 @@ except Exception as e:
     print(e)
 
 
-db = client.get_database("Sample_mflix")
-collection = db.get_collection("comments")
+db = client.get_database("University")
+student = db.get_collection("Student")
+faculty = db.get_collection('Faculty')
+admin = db.get_collection('Admin')
 
 
 

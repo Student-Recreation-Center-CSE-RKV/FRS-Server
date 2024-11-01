@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from routes.v1.index  import router as routers_v1
+from .v1.index  import router as routers_v1
 
 router = APIRouter()
 

@@ -44,6 +44,8 @@ class Student(BaseModel):
     phone_number: str
     password:str
     gender: Gender
+    is_admin: bool = False
+
 
     # Convert ObjectId to string if present 
     # @field_validator("id", mode="before")

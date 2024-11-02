@@ -1,3 +1,3 @@
-from .database import collection
+from .database import student,admin,faculty
 
-__all__ = ['collection']
+__all__ = ['admin','faculty']

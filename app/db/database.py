@@ -12,6 +12,10 @@ load_dotenv(os.path.join(BASEDIR, '.env'))
 
 uri = os.getenv("mongoDB_url")
 client = AsyncIOMotorClient(uri)
+db = client.get_database("University")
+collection = db.get_collection("Student")
+
+print(collection)
 
 try:
     client.admin.command('ping')
@@ -20,18 +24,15 @@ except Exception as e:
     print(e)
 
 
-db = client.get_database("Sample_mflix")
-collection = db.get_collection("comments")
+#db = client.get_database("Sample_mflix")
+#collection = db.get_collection("comments")
 
 
 
 
 
 # client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URL)
-# db = client.get_database("university")
-# student_collection = db.get_collection("students")
-
-
+ 
 
 
 

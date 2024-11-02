@@ -77,13 +77,10 @@ async def get_total_classes(year: str, branch: str, section: str, subject: str) 
     """
     total_classes = 30  # Replace with actual calculation
     return total_classes
+from fastapi import APIRouter
 
-# @router.get("/student/{student_id}")
-# async def get_student_attendance(student_id: str, subject: str) -> StudentAttendance:
-#     """
-#     Retrieves attendance information for a single student by ID, filtered by subject.
-#     """
-#     student = next((s for s in students_data if s["id"] == student_id), None)
-#     if not student or subject not in student["attendance"]:
-#         raise HTTPException(status_code=404, detail="Student or subject attendance not found")
-#     return StudentAttendance(id=student["id"], name=student["name"], classes_attended=student["attendance"][subject])
+router = APIRouter()
+
+@router.get("/dashboard")
+async def get_faculty_dashboard():
+    return {"message": "Faculty Dashboard"}

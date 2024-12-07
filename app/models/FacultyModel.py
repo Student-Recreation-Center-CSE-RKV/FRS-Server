@@ -16,3 +16,18 @@ class Faculty(BaseModel):
 
 class FacultyCollection(BaseModel):
     faculties: List[Faculty]  # List of Faculty objects
+    
+class AttendanceRequest(BaseModel):
+    year: str
+    branch: str
+    section: str
+    subject: str
+
+class StudentAttendance(BaseModel):
+    id: str
+    name: str
+    classes_attended: int
+    
+class Attendance(BaseModel):
+    student_id: str
+    attended: bool

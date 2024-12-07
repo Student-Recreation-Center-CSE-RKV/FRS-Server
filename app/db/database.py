@@ -11,6 +11,10 @@ BASEDIR = r'C:\\Users\\sathe\\OneDrive\\Documents\\FRS-Server\\app\\.env'
 
 uri = os.getenv("mongoDB_url")
 client = AsyncIOMotorClient(uri)
+db = client.get_database("University")
+collection = db.get_collection("Student")
+
+print(collection)
 
 try:
     client.admin.command('ping')
@@ -29,10 +33,7 @@ admin = db.get_collection('Admin')
 
 
 # client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URL)
-# db = client.get_database("university")
-# student_collection = db.get_collection("students")
-
-
+ 
 
 
 

@@ -1,7 +1,8 @@
-from typing import Optional, List
+from typing import Literal, Optional, List
 from pydantic import BaseModel, Field, EmailStr, field_validator
 from enum import Enum
 from bson import ObjectId
+from datetime import datetime
 
 # Enum definitions remain the same
 class Gender(str, Enum):
@@ -41,11 +42,10 @@ class Student(BaseModel):
     branch: Branch
     section: Section
     email_address: EmailStr
-    phone_number: str
+    phone_number: Optional[str] = None
     password:str
     gender: Gender
-    is_admin: bool = False
-
+    attendance: Optional[int] = Field(default=0, exclude=True)
 
     # Convert ObjectId to string if present 
     # @field_validator("id", mode="before")
@@ -58,3 +58,17 @@ class Student(BaseModel):
 
 class StudentCollection(BaseModel):
     students: List[Student]
+    
+    
+class ProfileUpdate(BaseModel):
+    phone_number: Optional[str]
+    email_address: Optional[EmailStr]
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+class AttendanceRecord(BaseModel):
+    course_id: str
+    timestamp: datetime
+    status: List[Literal["present", "absent"]]  # e.g., "present" or "absent

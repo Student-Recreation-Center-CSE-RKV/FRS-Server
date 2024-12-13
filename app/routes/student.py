@@ -1,7 +1,7 @@
-from fastapi import APIRouter,Body
+from fastapi import APIRouter,Body, HTTPException
 from bson import ObjectId
 from . import auth
-from models.StudentModel import Student
+from models.StudentModel import Student,ProfileUpdate,PasswordChange,AttendanceRecord
 from db.database import student
 router = APIRouter()
 
@@ -15,27 +15,47 @@ async def get_student_dashboard(id_number : str = Body(...,embed=True)):
                     details[key] = str(value)
     return details
 
+# View Profile
+@router.get("/students/{id_number}/profile/")
+async def view_profile(id_number: str):
+    details = await student.find_one({"id_number": id_number})
+    if not details:
+        raise HTTPException(status_code=404, detail="Student not found")
+    details["_id"] = str(details["_id"])  # Convert ObjectId to string
+    return details
 
-@router.post('/create-student')
-async def create_student(data:Student):
-    data = data.model_dump()
-    hash_pass = auth.get_password_hash(data['password'])
-    data['password'] = hash_pass
-    res = await student.insert_one(data)
-    if res.inserted_id and res.acknowledged:
-        return {'messaage':True}
-    else:
-        return {'messaage':False}
+# Change Password
+@router.put("/students/{id_number}/change-password/")
+async def change_password(id_number: str, data: PasswordChange):
+    details = await student.find_one({"id_number": id_number})
+    if not details:
+        raise HTTPException(status_code=404, detail="Student not found")
+    if details["password"] != data.current_password:  # Replace with secure hash comparison
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    await student.update_one({"id_number": id_number}, {"$set": {"password": data.new_password}})
+    return {"message": "Password changed successfully"}
 
-@router.post('/delete-student')
-async def delete_student(id_number:str= Body(..., embed=True)):
-    res = await student.delete_one({'id_number':id_number})
-    if res.acknowledged:
-        return {'messaage':True}
-    else:
-        return {'messaage':False}
+# View Attendance Records
+@router.get("/students/{id_number}/view_attendance/")
+async def view_attendance(id_number: str):
+    details = await student.find_one({"id_number": id_number}, {"attendance_records": 1})
+    if not details or "attendance_records" not in details:
+        return []
+    return details["attendance_records"]
 
-@router.post('/update-student')
-async def update_student():
-    pass
+# View Attendance Summary
+@router.get("/students/{id_number}/attendance/summary/")
+async def view_attendance_summary(id_number: str):
+    details = await student.find_one({"id_number": id_number}, {"attendance_records": 1})
+    if not details or "attendance_records" not in details:
+        return {"percentage": 0, "total_sessions": 0, "attended_sessions": 0}
+    records = details["attendance_records"]
+    total_sessions = len(records)
+    attended_sessions = sum(1 for r in records if r["status"] == "present")
+    percentage = (attended_sessions / total_sessions) * 100 if total_sessions > 0 else 0
+    return {
+        "percentage": percentage,
+        "total_sessions": total_sessions,
+        "attended_sessions": attended_sessions
+    }
 

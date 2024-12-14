@@ -7,12 +7,14 @@ class Faculty(BaseModel):
     first_name: str
     last_name: str
     middle_name: Optional[str] = None
+    password : str
     email_address: str
     phone_number: str
     department: Branch  # Ensure Branch is a valid Pydantic model or Enum
     designation: str
     qualification: str
     subjects: List[str]
+    is_admin: bool = False
 
 class FacultyCollection(BaseModel):
     faculties: List[Faculty]  # List of Faculty objects
@@ -30,4 +32,5 @@ class StudentAttendance(BaseModel):
     
 class Attendance(BaseModel):
     student_id: str
+    subject : str
     attended: bool

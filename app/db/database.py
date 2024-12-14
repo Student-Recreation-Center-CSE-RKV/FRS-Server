@@ -6,15 +6,12 @@ from dotenv import load_dotenv
 
 
 
-BASEDIR = r'C:\\Users\\sathe\\OneDrive\\Documents\\FRS-Server\\app\\.env'
-
+BASEDIR = r'/home/rguktrkvalley/Desktop/FinalFRS/FRS-Server/app/.env'
+load_dotenv(BASEDIR)
 
 uri = os.getenv("mongoDB_url")
 client = AsyncIOMotorClient(uri)
-db = client.get_database("University")
-collection = db.get_collection("Student")
 
-print(collection)
 
 try:
     client.admin.command('ping')
@@ -23,13 +20,11 @@ except Exception as e:
     print(e)
 
 
-db = client.get_database("University")
-student = db.get_collection("Student")
-faculty = db.get_collection('Faculty')
-admin = db.get_collection('Admin')
-
-
-
+db = client["University"]
+student = db["Student"]
+faculty = db['Faculty']
+admin = db['Admin']
+user=db["User"]
 
 
 # client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URL)

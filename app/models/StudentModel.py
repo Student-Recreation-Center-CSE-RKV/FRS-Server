@@ -72,3 +72,17 @@ class AttendanceRecord(BaseModel):
     course_id: str
     timestamp: datetime
     status: List[Literal["present", "absent"]]  # e.g., "present" or "absent
+    
+    
+class ImageBatch(BaseModel):
+    images: list[str]
+    
+class StudentDetails(BaseModel):
+    batch: str
+    branch: str
+    name: str
+    section: str
+    studentId: str 
+class CapturedImages(BaseModel):
+    form_data: StudentDetails 
+    images: List[str]

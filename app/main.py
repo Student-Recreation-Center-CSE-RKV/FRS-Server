@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from routes import auth, admin, student, faculty,user
+from routes.model import get_embd
 
 #from  db  import database
 
@@ -25,6 +26,7 @@ app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(student.router, prefix="/student", tags=["Student"])
 app.include_router(faculty.router, prefix="/faculty", tags=["Faculty"])
 app.include_router(user.router,prefix='/user',tags=["User"])
+app.include_router(get_embd.router,prefix='/capturing-images' , tags=['capturing-images'])
 
 
 # Mount static files for serving HTML

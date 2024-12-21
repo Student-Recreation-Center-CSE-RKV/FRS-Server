@@ -1,7 +1,7 @@
 from typing import List, Optional
 from pydantic import BaseModel
 from enum import Enum
-from models.StudentModel import Branch  # Ensure Branch is defined correctly
+from models.StudentModel import Branch , Year , Section  # Ensure Branch is defined correctly
 
 class Faculty(BaseModel):
     first_name: str
@@ -20,10 +20,10 @@ class FacultyCollection(BaseModel):
     faculties: List[Faculty]  # List of Faculty objects
     
 class AttendanceRequest(BaseModel):
-    year: str
-    branch: str
-    section: str
-    subject: str
+    student_id : Optional[str] = None
+    branch : Optional[str] = None
+    batch : Optional[str] = None
+    section : Optional[List[str]] = None
 
 class StudentAttendance(BaseModel):
     id: str

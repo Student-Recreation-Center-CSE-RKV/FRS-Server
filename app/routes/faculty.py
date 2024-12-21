@@ -7,6 +7,16 @@ from db import database
 
 router = APIRouter()
 
+
+collections = {
+        'R19': database.R19,
+        'R20': database.R20, 
+        'R21': database.R21,
+        'R22': database.R22,
+    }
+
+
+
 # Route to grant access to students
 @router.post("/students/access", response_model=str)
 async def grant_access(student_id: str):
@@ -114,30 +124,111 @@ async def mark_attendance_bulk(year: str, branch: str, section: str, subject: st
     return f"Attendance marked for {len(student_ids)} students in {subject} at {timestamp}"
 
 
-# Route to get attendance for a specific student, including timestamps
-@router.get("/attendance/{student_id}", response_model=dict)
-async def get_attendance(student_id: str):
-    student = await database.student.find_one({"id_number": student_id})
-    if student:
-        return {
-            "student_id": student_id,
-            "name": student["first_name"],
-            "attendance": student.get("attendance", 0),
-            "timestamps": student.get("attendance_timestamps", []),
-        }
-    raise HTTPException(status_code=404, detail="Student not found")
+# Route to get attendance details for a specific student.
+
+@router.get("/attendance/",response_model=dict)
+async def get_attendance(
+    student_id: Optional[str] = Query(None),
+    branch: Optional[str] = Query(None),
+    batch: Optional[str] = Query(None),
+    sections: Optional[List[str]] = Query(None)
+    ):
+    
+    if student_id:
+        student_details = await database.student.find_one({"id_number": student_id})
+        prefix = get_batch(student_id)
+        if prefix is not None:
+            attendance_report = await prefix.find_one({"id_number": student_id})
+        else:
+            attendance_report = None
+        if student_details and attendance_report:
+            attendance_summary = calculate_percentage(attendance_report)
+            return { "student_details" : {"student_id": student_id,
+                "first_name": student_details["first_name"],
+                "last_name" : student_details["last_name"],
+                "year" : student_details["year"],
+                "branch" : student_details["branch"],
+                "section":student_details["section"],
+                "phone_number" : student_details["phone_number"]} , "attendance_report": attendance_report["attendance_report"] ,
+                "attendance_summary" : attendance_summary
+            
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Student details or attendance details are not found")
+    elif batch is not None and branch is not None and sections is not None:
+        students = await database.student.find({"branch": branch, "section": {"$in": sections}}).to_list(None)
+        if students:
+            result = []
+            for student in students:
+                student_id = student["id_number"]
+                prefix = get_batch(batch)
+                attendance_data = await prefix.find_one({"id_number": student_id})
+                if attendance_data is not None:
+                    attendance_summary = calculate_percentage(attendance_data)
+                    result.append({
+                        "student_id": student_id,
+                        "first_name": student["first_name"],
+                        "last_name": student["last_name"],
+                        "Section" : student["section"],
+                        "attendance_summary": attendance_summary
+                    })
+                else:
+                    result.append({
+                        "student_id": student_id,
+                        "first_name": student["first_name"],
+                        "last_name": student["last_name"],
+                        "Section" : student["section"],
+                        "attendance_summary": None
+                    })
+            result.sort(key=lambda x: (x["Section"], x["student_id"]))
+            return {"students": result}
+        else:
+            raise HTTPException(status_code=404, detail="No students found for the given criteria")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid query parameters")
+    
 
 
-# Route to get attendance for all students, including timestamps
-@router.get("/attendance", response_model=List[dict])
-async def get_all_attendance():
-    students_data = await database.student.find().to_list(100)
-    return [
-        {
-            "student_id": student["id_number"],
-            "name": student["first_name"],
-            "attendance": student.get("attendance", 0),
-            "timestamps": student.get("attendance_timestamps", []),
+# function to calculate the percentage of the attendance
+def calculate_percentage(attendance_report):
+    result = {}
+    total_classes = 0
+    total_present = 0
+
+    for subject, data in attendance_report['attendance_report'].items():
+        num_classes = len(data['attendance'])
+        
+        num_present = 0
+        for entry in data['attendance']: 
+            if entry['status'] == 'present':
+                num_present+=1
+        
+        percentage = (num_present / num_classes) * 100 if num_classes > 0 else 0
+
+        result[subject] = {
+            'subject_name': data['subject_name'],
+            'faculty_name': data['faculty_name'],
+            'num_classes': num_classes,
+            'num_present': num_present,
+            'percentage': percentage
         }
-        for student in students_data
-    ]
+
+        total_classes += num_classes
+        total_present += num_present
+
+    total_percentage = (total_present / total_classes) * 100 if total_classes > 0 else 0
+    
+    result['total'] = {
+        'total_classes': total_classes,
+        'total_present': total_present,
+        'total_percentage': total_percentage
+    }
+
+    return result
+
+
+def get_batch(string: str):
+    return collections[string[:3]]
+
+
+

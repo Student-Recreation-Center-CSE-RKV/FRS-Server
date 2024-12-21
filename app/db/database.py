@@ -26,6 +26,12 @@ faculty = db['Faculty']
 admin = db['Admin']
 user=db["User"]
 
+db2 = client['Attendance']
+R19 = db2['R19']
+R20 = db2['R20']
+R21 = db2['R21']
+R22 = db2['R22']
+
 
 # client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URL)
  

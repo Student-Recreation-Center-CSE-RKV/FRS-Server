@@ -1,4 +1,4 @@
-from typing import Literal, Optional, List
+from typing import Dict, Literal, Optional, List
 from pydantic import BaseModel, Field, EmailStr, field_validator
 from enum import Enum
 from bson import ObjectId
@@ -30,6 +30,12 @@ class Section(str, Enum):
     C = "C"
     D = "D"
     E = "E"
+    
+class SubjectSummary(BaseModel):
+    faculty_name: str  # Name of the faculty member for the subject
+    present_days: int = 0
+    absent_days: int = 0
+
 
 class Student(BaseModel):
     # Treat `id` as a string and ensure proper conversion from ObjectId
@@ -45,8 +51,9 @@ class Student(BaseModel):
     phone_number: Optional[str] = None
     password:str
     gender: Gender
-    attendance: Optional[int] = Field(default=0, exclude=True)
-
+    overall_attendance: Optional[int] = Field(default=0, exclude=True)
+    # subject_summary: Dict[str, SubjectSummary] = Field(default_factory=dict)  # Subject-wise attendance summary
+    
     # Convert ObjectId to string if present 
     # @field_validator("id", mode="before")
     # def convert_objectid(cls, value):
@@ -74,8 +81,8 @@ class AttendanceRecord(BaseModel):
     status: List[Literal["present", "absent"]]  # e.g., "present" or "absent
     
     
-class ImageBatch(BaseModel):
-    images: list[str]
+# class ImageBatch(BaseModel):
+#     images: list[str]
     
 class StudentDetails(BaseModel):
     batch: str
@@ -83,6 +90,6 @@ class StudentDetails(BaseModel):
     name: str
     section: str
     studentId: str 
-class CapturedImages(BaseModel):
-    form_data: StudentDetails 
-    images: List[str]
+# class CapturedImages(BaseModel):
+#     form_data: StudentDetails 
+#     images: List[str]

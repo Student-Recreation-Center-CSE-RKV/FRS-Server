@@ -121,7 +121,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     if user.role == "admin":
         return {"redirect": "/admin/dashboard"}
     elif user.role == "student":
-        return {"redirect": "/student/dashboard"}
+        return {"redirect": "/student/dashboard/{user.id}"}
     elif user.role == "faculty":
         return {"redirect": "/faculty/dashboard"}
     return {"access_token": access_token, "token_type": "bearer"}

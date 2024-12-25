@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 
 
-BASEDIR = r'/home/rguktrkvalley/Desktop/FinalFRS/FRS-Server/app/.env'
+BASEDIR = r'/home/rguktrkvalley/FRS-Server/.env'
 load_dotenv(BASEDIR)
 
 uri = os.getenv("mongoDB_url")
@@ -27,11 +27,14 @@ admin = db['Admin']
 user=db["User"]
 
 db2 = client['Attendance']
-R19 = db2['R19']
-R20 = db2['R20']
-R21 = db2['R21']
-R22 = db2['R22']
-
+# R19 = db2['R19']
+# R20 = db2['R20']
+# R21 = db2['R21']
+# R22 = db2['R22']
+E1 = db2['E1']
+E2 = db2['E2']
+E3 = db2['E3']
+E4 = db2['E4']
 
 # client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URL)
  

@@ -1,19 +1,211 @@
-from datetime import datetime
+from datetime import date
+from pydantic import BaseModel
 from models.StudentModel import AttendanceRecord
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Optional
-from models.FacultyModel import StudentAttendance, AttendanceRequest, Attendance
+from typing import Dict, List, Optional
+from models.FacultyModel import AttendanceUpdate,AttendanceRecord,StudentAttendance, Attendance
 from db import database
 
 router = APIRouter()
 
-
 collections = {
-        'R19': database.R19,
-        'R20': database.R20, 
-        'R21': database.R21,
-        'R22': database.R22,
+        'E1': database.E1,
+        'E2': database.E2, 
+        'E3': database.E3,
+        'E4': database.E4,
     }
+today_date = str(date.today()) 
+
+student_data=database.student
+@router.post("/mark_attendance/")
+async def update_attendance(attendance_data: AttendanceUpdate):
+    ids = attendance_data.ids
+    subject = attendance_data.subject
+    faculty_name = attendance_data.faculty_name
+    year = attendance_data.year
+    branch = attendance_data.branch
+    section = attendance_data.section
+
+    collection = collections[year]
+
+    relevant_students = await student_data.find(
+        {"year": year, "branch": branch, "section": section}
+    ).to_list(length=None)
+    
+    if not relevant_students:
+        raise HTTPException(status_code=404, detail="No students found for the given criteria.")
+    
+    # Create a dictionary for quick lookups by id_number
+    relevant_students_dict = {student["id_number"]: student for student in relevant_students}
+
+    # Process each student ID in the provided list
+    for student_id in ids:
+        student = relevant_students_dict.get(student_id)
+        if not student:
+            raise HTTPException(status_code=404, detail=f"Student ID {student_id} not found")
+        
+        attendance_field = f"attendance.{subject}"
+                
+        # Check if an attendance entry for today already exists
+        existing_entry = await collection.find_one({
+            "id_number": student_id,
+            f"{attendance_field}.date": today_date,
+            f"{attendance_field}.faculty_name": faculty_name
+         })
+        
+        if existing_entry:
+            # Update the existing entry's status to "present"
+            await collection.update_one(
+                {"id_number": student_id, f"{attendance_field}.date": today_date},
+                {"$set": {f"{attendance_field}.$.status": "present"}}
+            )
+        else:
+            # Add a new attendance entry
+            await collection.update_one(
+                {"id_number": student_id},
+                {"$push": {attendance_field: {"faculty_name": faculty_name, "date": today_date, "status": "present"}}},
+                upsert=True
+            ) 
+        
+    # Mark absent for students not in the list of IDs
+    for student in relevant_students:
+        if student["id_number"] not in ids:
+            attendance_field = f"attendance.{subject}"
+            # subject_summary_field = f"subject_summary.{subject}"
+
+            # Check if attendance for this date already exists
+            existing_entry =await  collection.find_one({
+                "id_number": student["id_number"],
+                f"{attendance_field}.date": today_date,
+                f"{attendance_field}.faculty_name": faculty_name
+            })
+
+            if existing_entry:
+            #     # Update status to absent if entry exists
+                await collection.update_one(
+                    {"id_number": student["id_number"], f"{attendance_field}.date":today_date},
+                    {"$set": {f"{attendance_field}.$.status": "absent"}}
+                )
+            else:
+                # Add new attendance entry with absent status
+                await collection.update_one(
+                    {"id_number": student["id_number"]},
+                    {"$push": {attendance_field: {"faculty_name": faculty_name, "date": today_date, "status": "absent"}}},
+                    upsert=True
+                )     
+    for student in relevant_students:
+        id_number = student["id_number"]
+        attendance_record = await collection.find_one({"id_number": id_number})
+
+        if not attendance_record:
+            continue
+
+        attendance = attendance_record.get("attendance", {})
+        per_subject_attendance = {}
+        subject_attendance_percentages = []
+
+        for subject, records in attendance.items():
+            total_classes = len(records)
+            present_classes = sum(1 for record in records if record["status"] == "present")
+            attendance_percentage = (present_classes / total_classes) * 100 if total_classes > 0 else 0
+            per_subject_attendance[subject] = attendance_percentage
+            subject_attendance_percentages.append(attendance_percentage)
+
+        # Calculate overall attendance as the average of subject attendance percentages
+        overall_attendance = (
+            sum(subject_attendance_percentages) / len(subject_attendance_percentages)
+            if subject_attendance_percentages else 0
+        )
+
+        # Update the student's attendance summary
+        await student_data.update_one(
+            {"id_number": id_number},
+            {"$set": {"overall_attendance": overall_attendance}},
+            upsert=True
+        )
+ 
+
+    return {
+        "message": "Attendance updated successfully",
+        "updated_ids": ids,
+        "absent_marked_ids": [
+            student["id_number"] for student in relevant_students if student["id_number"] not in ids
+        ]
+    }
+
+@router.get("/attendance/student/{id_number}")
+async def calculate_student_attendance(id_number: str):
+    # Find the student in the database
+    student_record = await student_data.find_one({"id_number": id_number})
+    if not student_record:
+        raise HTTPException(status_code=404, detail=f"Student ID {id_number} not found.")
+    
+    year = student_record["year"]
+    collection = collections.get(year)
+    
+    # if not collection:
+    #     raise HTTPException(status_code=404, detail="No attendance records found for the student's year.")
+    
+    # Retrieve the student's attendance data
+    attendance_record = await collection.find_one({"id_number": id_number})
+    if not attendance_record or "attendance" not in attendance_record:
+        return {
+            "id_number": id_number,
+            "message": "No attendance records found for this student.",
+            "per_subject_attendance": {},
+            "overall_attendance": 0.0
+        }
+    
+    # Attendance processing
+    attendance = attendance_record.get("attendance", {})
+    per_subject_attendance = {}
+    subject_attendance_percentages = []
+
+    for subject, records in attendance.items():
+        # Ensure records are valid as per the AttendanceRecord model
+        valid_records = [
+            record for record in records 
+            if "status" in record and record["status"] in {"present", "absent"}
+        ]
+        
+        present_count = sum(1 for record in valid_records if record["status"] == "present")
+        total_count = len(valid_records)
+        
+        subject_percentage = ((present_count / total_count )* 100) if total_count > 0 else 0.0
+        per_subject_attendance[subject] = {
+            "present": present_count,
+            "total": total_count,
+            "percentage": subject_percentage
+        }
+        
+        # Store the percentage for averaging later
+        subject_attendance_percentages.append(subject_percentage)
+
+    # Calculate overall subjects attendance as the average of subject percentages
+    overall_attendance = (
+        sum(subject_attendance_percentages) / len(subject_attendance_percentages)
+        if subject_attendance_percentages else 0.0
+    )
+    if "overall_attendance" in student_record:
+        # Update existing overall attendance
+        await student_data.update_one(
+            {"id_number": id_number},
+            {"$set": {"overall_attendance": overall_attendance}}
+        )
+    else:
+        # Insert new overall attendance field
+        await student_data.update_one(
+            {"id_number": id_number},
+            {"$set": {"overall_attendance": overall_attendance}},
+            upsert=True
+        )
+
+    return {
+        "id_number": id_number,
+        "per_subject_attendance": per_subject_attendance,
+        "overall_attendance": overall_attendance
+    }
+
 
 
 
@@ -67,65 +259,8 @@ async def get_all_attendance():
      for student in students_data
     ]
 
-# Route to mark attendance of a  student accc to course ID
-@router.post("/students/{id_number}/log_attendance/")
-async def log_attendance(id_number: str, attendance: AttendanceRecord):
-    record = attendance.dict()
-    result = await database.student.update_one(
-        {"id_number": id_number},
-        {"$push": {"attendance_records": record}}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Student not found")
-    return {"message": "Attendance logged successfully", "record": record}
-
-
-# Route to mark attendance for a single student with a timestamp
-@router.post("/attendance/mark", response_model=str)
-async def mark_attendance(attendance: Attendance=Depends(Attendance)):
-    student = await database.student.find_one({"id_number": attendance.student_id})
-    if student:
-        # Get the current timestamp
-        timestamp = datetime.utcnow().isoformat()
-
-        # Increment attendance and add the timestamp
-        new_attendance = student.get("attendance", 0) + 1
-        timestamps = student.get("attendance_timestamps", [])
-        timestamps.append(timestamp)
-
-        # Update the student document
-        await database.student.update_one(
-            {"id_number": attendance.student_id},
-            {"$set": {"attendance": new_attendance, "attendance_timestamps": timestamps}}
-        )
-
-        return f"Attendance updated for student {student['first_name']} at {timestamp}"
-    raise HTTPException(status_code=404, detail="Student not found")
-
-
-# Route to mark attendance for multiple students with timestamps
-@router.post("/faculty/mark-attendance", response_model=str)
-async def mark_attendance_bulk(year: str, branch: str, section: str, subject: str, student_ids: List[str]):
-    course_filter = {"year": year, "branch": branch, "section": section, "subject": subject}
-    timestamp = datetime.utcnow().isoformat()
-
-    for student_id in student_ids:
-        student = await database.student.find_one({"id_number": student_id, **course_filter})
-        if student:
-            new_attendance = student.get("attendance", 0) + 1
-            timestamps = student.get("attendance_timestamps", [])
-            timestamps.append(timestamp)
-
-            await database.student.update_one(
-                {"id_number": student_id, **course_filter},
-                {"$set": {"attendance": new_attendance, "attendance_timestamps": timestamps}}
-            )
-
-    return f"Attendance marked for {len(student_ids)} students in {subject} at {timestamp}"
-
 
 # Route to get attendance details for a specific student.
-
 @router.get("/attendance/",response_model=dict)
 async def get_attendance(
     student_id: Optional[str] = Query(None),
@@ -178,7 +313,7 @@ async def get_attendance(
                         "first_name": student["first_name"],
                         "last_name": student["last_name"],
                         "Section" : student["section"],
-                        "attendance_summary": None
+                         "attendance_summary": None
                     })
             result.sort(key=lambda x: (x["Section"], x["student_id"]))
             return {"students": result}

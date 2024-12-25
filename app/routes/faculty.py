@@ -265,13 +265,13 @@ async def get_all_attendance():
 async def get_attendance(
     student_id: Optional[str] = Query(None),
     branch: Optional[str] = Query(None),
-    batch: Optional[str] = Query(None),
+    year: Optional[str] = Query(None),
     sections: Optional[List[str]] = Query(None)
     ):
     
     if student_id:
         student_details = await database.student.find_one({"id_number": student_id})
-        prefix = get_batch(student_id)
+        prefix = get_year(year)
         if prefix is not None:
             attendance_report = await prefix.find_one({"id_number": student_id})
         else:
@@ -290,13 +290,13 @@ async def get_attendance(
             }
         else:
             raise HTTPException(status_code=404, detail="Student details or attendance details are not found")
-    elif batch is not None and branch is not None and sections is not None:
+    elif year is not None and branch is not None and sections is not None:
         students = await database.student.find({"branch": branch, "section": {"$in": sections}}).to_list(None)
         if students:
             result = []
             for student in students:
                 student_id = student["id_number"]
-                prefix = get_batch(batch)
+                prefix = get_year(year)
                 attendance_data = await prefix.find_one({"id_number": student_id})
                 if attendance_data is not None:
                     attendance_summary = calculate_percentage(attendance_data)
@@ -341,7 +341,6 @@ def calculate_percentage(attendance_report):
         percentage = (num_present / num_classes) * 100 if num_classes > 0 else 0
 
         result[subject] = {
-            'subject_name': data['subject_name'],
             'faculty_name': data['faculty_name'],
             'num_classes': num_classes,
             'num_present': num_present,
@@ -362,8 +361,8 @@ def calculate_percentage(attendance_report):
     return result
 
 
-def get_batch(string: str):
-    return collections[string[:3]]
+def get_year(string: str):
+    return collections[string]
 
 
 

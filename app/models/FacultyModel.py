@@ -1,9 +1,15 @@
 from datetime import date
 from typing import Dict, List, Optional
 import dateutil
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 from enum import Enum
 from models.StudentModel import Branch , Year , Section  # Ensure Branch is defined correctly
+
+class Section(BaseModel):
+    subject_name: str
+    year: str
+    sections: List[str]
+
 
 class Faculty(BaseModel):
     first_name: str
@@ -15,7 +21,7 @@ class Faculty(BaseModel):
     department: Branch  # Ensure Branch is a valid Pydantic model or Enum
     designation: str
     qualification: str
-    subjects: List[str]
+    subjects: List[Section]
     is_admin: bool = False
 
 class FacultyCollection(BaseModel):
@@ -48,6 +54,7 @@ class AttendanceUpdate(BaseModel):
     year: str
     branch: str
     section: str
+    number_of_periods:int 
 
 
 class AttendanceRecord(BaseModel):
@@ -58,3 +65,18 @@ class AttendanceRecord(BaseModel):
 class StudentAttendance(BaseModel):
     id_number: str
     attendance: Dict[str, List[AttendanceRecord]]  
+
+
+class AttendanceRecord(BaseModel):
+    date: str
+    status: str
+    number_of_periods: int
+
+class SubjectAttendance(BaseModel):
+    faculty_name: str
+    attendance: List[AttendanceRecord]
+
+
+class AttendanceData(BaseModel):
+    id_number: str
+    attendance_report: Dict[str, SubjectAttendance]

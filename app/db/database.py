@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 
 
-BASEDIR = r'C:\\Users\\sathe\\OneDrive\\Documents\\FRS-Server\\app\\.env'
+BASEDIR = r'/home/rguktrkvalley/FRS-Server/app/.env'
 load_dotenv(BASEDIR)
 
 uri = os.getenv("mongoDB_url")
@@ -31,6 +31,12 @@ E1 = db2['E1']
 E2 = db2['E2']
 E3 = db2['E3']
 E4 = db2['E4']
+
+db3=client["TimeTable"]
+E1T = db3['E1']
+E2T = db3['E2']
+E3T = db3['E3']
+E4T = db3['E4']
 
 # client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URL)
  

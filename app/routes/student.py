@@ -4,26 +4,81 @@ from .auth import get_password_hash
 from models.StudentModel import Student,ProfileUpdate,PasswordChange,AttendanceRecord
 from db.database import student
 from db import database
+from datetime import datetime
 router = APIRouter()
 
-collections = {
+attendance_collections = {
         'E1': database.E1,
         'E2': database.E2, 
         'E3': database.E3,
         'E4': database.E4,
     }
 
+timetable_collections = {
+        'E1': database.E1_timetable,
+        'E2': database.E2_timetable, 
+        'E3': database.E3_timetable,
+        'E4': database.E4_timetable,
+    }
 
-
+# student dashboard Route
 @router.get("/dashboard")
-async def get_student_dashboard(id_number : str = Body(...,embed=True)):
-    details = await student.find_one({'id_number':id_number})
-    if details:
-        if isinstance(details,dict):
-            for key,value in details.items():
-                if isinstance(value,ObjectId):
-                    details[key] = str(value)
-    return details
+async def get_student_dashboard(id_number: str, date: str):
+    details = await student.find_one({'id_number': id_number})
+    if not details:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    attendance_collection = attendance_collections[details['year']]
+    attendance_report = await attendance_collection.find_one({'id_number': id_number})
+    if not attendance_report:
+        raise HTTPException(status_code=404, detail="Attendance report not found for your Student id")
+    date_object = datetime.strptime(date, '%Y-%m-%d')
+    current_date = datetime.now()
+    current_date = current_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    weekday_name = date_object.strftime('%A').lower()
+    
+    timetable_collection = timetable_collections[details['year']]
+    timetable = await timetable_collection.find_one()
+    if not timetable:
+        raise HTTPException(status_code=404, detail="Timetable not found")
+    section = details['section']
+    
+    if weekday_name not in timetable or section not in timetable[weekday_name]:
+        raise HTTPException(status_code=404, detail="Timetable not found")
+    
+    daily_timetable = timetable[weekday_name][section]
+    response = {}
+
+    for subject, periods in daily_timetable.items():
+        subject = subject.upper()
+        subject_status = [periods]
+        subject_data = attendance_report.get('attendance_report', {}).get(subject)
+        if subject_data:
+            for record in subject_data.get('attendance', []):
+                if record['date'] == date:
+                    subject_status.append(len(periods))
+                    subject_status.append(record['status'])
+                    break
+            else:
+                if date_object < current_date:
+                    subject_status.append(len(periods))
+                    subject_status.append('Cancelled')
+                else:
+                    subject_status.append(len(periods))
+                    subject_status.append('Upcoming')
+        else:
+            if date_object < current_date:
+                subject_status.append(len(periods))
+                subject_status.append('Cancelled')
+            else:
+                subject_status.append(len(periods))
+                subject_status.append('Upcoming')
+        response[subject] = subject_status
+
+    return response
+
+
+        
 
 # View Profile
 @router.get("/students/{id_number}/profile/")
@@ -54,7 +109,7 @@ async def change_password(id_number: str, data: PasswordChange):
 @router.get("/attendance")
 async def view_attendance_summary(id_number: str , year : str):
     if id_number:
-        prefix = get_year(year)
+        prefix = get_attendance_collection(year)
         if prefix is not None:
             attendance_report = await prefix.find_one({"id_number": id_number}) 
         else:
@@ -107,8 +162,11 @@ def calculate_percentage(attendance_report):
     return result
 
 
-def get_year(string: str):
-    return collections[string]
+def get_attendance_collection(string: str):
+    return attendance_collections[string]
+
+def get_titmtable_collections(string: str):
+    return timetable_collections[string]
 
 
 

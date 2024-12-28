@@ -66,7 +66,6 @@ async def create_faculty(faculty_data: Faculty = Depends(Faculty)):
 #             "student_count": student_count
 #         }
 #     raise HTTPException(status_code=404, detail="Admin not found")
-
 # # Manage Attendance
 # @router.post('/manage-attendance')
 # async def manage_attendance(student_id: str, attendance: bool):
@@ -148,3 +147,7 @@ async def update_student(student_id: str,student_data: Student = Depends(Student
         )
     return {"message": "Student updated successfully"} if res.modified_count else {"message": "No changes made"}
 
+@router.get('/Scheduled_classes')
+async def manage_attendance(date: str, year:str):
+    
+    return {}

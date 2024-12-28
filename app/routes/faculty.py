@@ -78,12 +78,12 @@ async def faculty_dashboard(email_address: str, date: str):
             section_schedule = day_schedule.get(section, {})
             for subject_key, periods in section_schedule.items():
                 if subject_key == subject_name:
-                    for period in periods:
+                    # for period in periods:
                         day_wise_schedule.append({
                             "year": year,
                             "section": section,
                             "subject": subject_name,
-                            "period": period,
+                            "periods": periods,
                             
                         })
     if not day_wise_schedule:
@@ -95,7 +95,7 @@ async def faculty_dashboard(email_address: str, date: str):
         year = schedule["year"]
         section = schedule["section"]
         subject_name = schedule["subject"]
-        period = schedule["period"]
+        periods = schedule["periods"]
 
         # Dynamically select the attendance collection for the given year
         attendance_collection = attendance_collections.get(year)
@@ -108,7 +108,7 @@ async def faculty_dashboard(email_address: str, date: str):
                 "year": year,
                 "section": section,
                 "subject": subject_name,
-                "period": period,
+                "periods": periods,
                 "no of classes":"N/A",
                 "present_ids": "N/A",
                 "absent_ids": "N/A"
@@ -125,7 +125,7 @@ async def faculty_dashboard(email_address: str, date: str):
                 "year": year,
                 "section": section,
                 "subject": subject_name,
-                "period": period,
+                "periods": periods,
                 "no of classes":"N/A",
                 "present_ids": "N/A",
                 "absent_ids": "N/A"
@@ -167,7 +167,7 @@ async def faculty_dashboard(email_address: str, date: str):
             "year": year,
             "section": section,
             "subject": subject_name,
-            "period": period,
+            "periods": periods,
             "no of classes":no_of_classes if no_of_classes>0 else "N/A",
             "present_ids": present_ids if present_ids else "N/A",
             "absent_ids": absent_ids if absent_ids else "N/A"

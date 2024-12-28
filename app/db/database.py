@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 
 
-BASEDIR = r'C:\\Users\\sathe\\OneDrive\\Documents\\FRS-Server\\app\\.env'
+BASEDIR = r'/home/rguktrkvalley/FRS-Server/app/.env'
 load_dotenv(BASEDIR)
 
 uri = os.getenv("mongoDB_url")

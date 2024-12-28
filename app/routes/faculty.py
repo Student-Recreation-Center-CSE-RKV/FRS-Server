@@ -8,17 +8,17 @@ from db import database
 
 router = APIRouter()
 
-collections = {
+attendance_collections = {
         'E1': database.E1,
         'E2': database.E2, 
         'E3': database.E3,
         'E4': database.E4,
     }
 timetable_collections={
-    'E1':database.E1T,
-    'E2':database.E2T,
-    'E3':database.E3T,
-    'E4':database.E4T,
+    'E1':database.E1_timetable,
+    'E2':database.E2_timetable,
+    'E3':database.E3_timetable,
+    'E4':database.E4_timetable,
 }
 today_date = str(date.today()) 
 student_data=database.student
@@ -86,7 +86,6 @@ async def faculty_dashboard(email_address: str, date: str):
                             "period": period,
                             
                         })
-        print(day_wise_schedule)
     if not day_wise_schedule:
         return {"message": f"No classes scheduled for {day.capitalize()} for this faculty."}
 
@@ -99,7 +98,7 @@ async def faculty_dashboard(email_address: str, date: str):
         period = schedule["period"]
 
         # Dynamically select the attendance collection for the given year
-        attendance_collection = collections.get(year)
+        attendance_collection = attendance_collections.get(year)
         # if not attendance_collection:
         #     raise HTTPException(status_code=404, detail=f"No attendance collection for year: {year}")
 
@@ -194,11 +193,11 @@ async def update_attendance(attendance_data: AttendanceUpdate):
     subject = attendance_data.subject
     faculty_name = attendance_data.faculty_name
     year = attendance_data.year
-    branch = attendance_data.branch
+    branch = attendance_data.branch 
     section = attendance_data.section
     number_of_periods = attendance_data.number_of_periods
 
-    collection = collections[year]
+    collection = attendance_collections[year]
 
     relevant_students = await student_data.find(
         {"year": year, "branch": branch, "section": section}
@@ -310,7 +309,10 @@ async def calculate_student_attendance(id_number: str):
         raise HTTPException(status_code=404, detail=f"Student ID {id_number} not found.")
     
     year = student_record["year"]
-    collection = collections.get(year)
+    collection = attendance_collections.get(year)
+
+    # if not collection:
+    #     raise HTTPException(status_code=404, detail="No attendance records found for the student's year.")
     
     # Retrieve the student's attendance data
     attendance_record = await collection.find_one({"id_number": id_number})
@@ -381,32 +383,18 @@ async def initialize_attendance():
         )
     return "Overall attendance initialized successfully for all students."
 
-#  Route to get all students' attendance
-@router.get("/attendance", response_model=List[dict])
-async def get_all_attendance():
-    students_data = await database.student.find().to_list(100)
-    return [
-    {
-        "id": student.get("id_number"),
-        "name": student.get("first_name"),
-        "attendance": student.get("attendance", None),
-    }
-     for student in students_data
-    ]
 
-
-# Route to get attendance details for a specific student.
+# Route to get attendance details for a specific student and for all students.
 @router.get("/attendance/",response_model=dict)
 async def get_attendance(
     student_id: Optional[str] = Query(None),
     branch: Optional[str] = Query(None),
-    year: Optional[str] = Query(None),
+    year: str = Query(None),
     sections: Optional[List[str]] = Query(None)
     ):
-    
-    if student_id:
+    if student_id and year:
         student_details = await database.student.find_one({"id_number": student_id})
-        prefix = get_year(year)
+        prefix = attendance_collections[year]
         if prefix is not None:
             attendance_report = await prefix.find_one({"id_number": student_id})
         else:
@@ -414,7 +402,7 @@ async def get_attendance(
         if student_details and attendance_report:
             attendance_summary = calculate_percentage(attendance_report)
             return { "student_details" : {"student_id": student_id,
-                "first_name": student_details["first_name"],
+                "first_name": student_details["first_name"],     
                 "last_name" : student_details["last_name"],
                 "year" : student_details["year"],
                 "branch" : student_details["branch"],
@@ -426,12 +414,12 @@ async def get_attendance(
         else:
             raise HTTPException(status_code=404, detail="Student details or attendance details are not found")
     elif year is not None and branch is not None and sections is not None:
-        students = await database.student.find({"branch": branch, "section": {"$in": sections}}).to_list(None)
+        students = await database.student.find({"branch": branch.lower(), "year":year,"section": {"$in": sections}}).to_list(None)
         if students:
             result = []
             for student in students:
                 student_id = student["id_number"]
-                prefix = get_year(year)
+                prefix = attendance_collections[year]
                 attendance_data = await prefix.find_one({"id_number": student_id})
                 if attendance_data is not None:
                     attendance_summary = calculate_percentage(attendance_data)
@@ -462,19 +450,18 @@ async def get_attendance(
 # function to calculate the percentage of the attendance
 def calculate_percentage(attendance_report):
     result = {}
-    total_classes = 0
-    total_present = 0
-
+    
+    total_percentage = 0
     for subject, data in attendance_report['attendance_report'].items():
-        num_classes = len(data['attendance'])
-        
+        num_classes = 0
         num_present = 0
         for entry in data['attendance']: 
+            num_classes += entry['number_of_periods']
             if entry['status'] == 'present':
-                num_present+=1
+                num_present+=entry['number_of_periods']
         
         percentage = (num_present / num_classes) * 100 if num_classes > 0 else 0
-
+        total_percentage += percentage
         result[subject] = {
             'faculty_name': data['faculty_name'],
             'num_classes': num_classes,
@@ -482,22 +469,16 @@ def calculate_percentage(attendance_report):
             'percentage': percentage
         }
 
-        total_classes += num_classes
-        total_present += num_present
 
-    total_percentage = (total_present / total_classes) * 100 if total_classes > 0 else 0
+    total_percentage = total_percentage / len(attendance_report['attendance_report']) if len(attendance_report['attendance_report']) > 0 else 0
     
-    result['total'] = {
-        'total_classes': total_classes,
-        'total_present': total_present,
+    result['total_percentage'] = {
         'total_percentage': total_percentage
     }
 
     return result
 
 
-def get_year(string: str):
-    return collections[string]
 
 
 

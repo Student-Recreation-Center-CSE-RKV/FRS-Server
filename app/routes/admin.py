@@ -23,7 +23,7 @@ async def admin_login(email_address: str, password: str):
 @router.post("/create-student", response_model=Student)
 async def create_student(student_data: Student = Depends(Student)):
     # Check if the student already exists (optional)
-    existing_student = await student.find_one({"id_number": student_data.id_number})
+    existing_student = await student.find_one({"id_number": student_data.student_id})
     if existing_student:
         raise HTTPException(status_code=400, detail="Student with this ID already exists.")
     # Insert the new student into the database
@@ -33,9 +33,9 @@ async def create_student(student_data: Student = Depends(Student)):
     # print(data)
     res = await student.insert_one(student_data)
     if res.inserted_id and res.acknowledged:
-        return {'message':True}
+        return {'message':'True'}
     else:
-        return {'message':False}
+        return {'message':'False'}
    
 @router.post("/create-faculty", response_model=Faculty)
 async def create_faculty(faculty_data: Faculty = Depends(Faculty)):

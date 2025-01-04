@@ -1,6 +1,6 @@
 from fastapi import APIRouter,Body, HTTPException
 from bson import ObjectId
-from .auth import get_password_hash
+from .auth import get_password_hash,verify_password
 from models.StudentModel import Student,ProfileUpdate,PasswordChange,AttendanceRecord
 from db.database import student
 from db import database
@@ -75,7 +75,7 @@ async def get_student_dashboard(id_number: str, date: str):
                 subject_status.append('Upcoming')
         response[subject] = subject_status
 
-    return response
+    return {"Student_id":id_number, "name":details['first_name']+' '+details['last_name'] , "Timetable":response}
 
 
         
@@ -86,30 +86,33 @@ async def view_profile(id_number: str):
     details = await student.find_one({"id_number": id_number})
     if not details:
         raise HTTPException(status_code=404, detail="Student not found")
-    details["_id"] = str(details["_id"])  # Convert ObjectId to string
+    details["_id"] = str(details["_id"])  
     return {"Student details":details}
 
 # Change Password
 @router.put("/students/{id_number}/change-password/")
 async def change_password(id_number: str, data: PasswordChange):
     details = await student.find_one({"id_number": id_number})
-    current_password = get_password_hash(details["password"])
+    print(details)
     if not details:
         raise HTTPException(status_code=404, detail="Student not found")
-    if current_password != data.current_password: 
-        raise HTTPException(status_code=400, detail="Current password is incorrect")
-    result = await student.update_one({"id_number": id_number}, {"$set": {"password": get_password_hash(data.new_password)}})
-    if result.modified_count > 0:
-        return {"message": "Password changed successfully"}
+    response = verify_password(data.current_password,details['password'])
+    print(response)
+    if response:
+        result = await student.update_one({"id_number": id_number}, {"$set": {"password": get_password_hash(data.new_password)}})
+        if result.modified_count > 0:
+            return {"message": "Password changed successfully"}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to update password. Please try again.")
     else:
-        raise HTTPException(status_code=400, detail="Failed to update password. Please try again.")
+        raise HTTPException(status_code=400, detail="Incorrect password. Please try again.")
 
 
 # View Attendance Summary
 @router.get("/attendance")
 async def view_attendance_summary(id_number: str , year : str):
     if id_number:
-        prefix = get_attendance_collection(year)
+        prefix = attendance_collections[year]
         if prefix is not None:
             attendance_report = await prefix.find_one({"id_number": id_number}) 
         else:
@@ -160,13 +163,4 @@ def calculate_percentage(attendance_report):
     }
 
     return result
-
-
-def get_attendance_collection(string: str):
-    return attendance_collections[string]
-
-def get_titmtable_collections(string: str):
-    return timetable_collections[string]
-
-
 

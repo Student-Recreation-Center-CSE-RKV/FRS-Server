@@ -5,9 +5,10 @@ import os
 from dotenv import load_dotenv
 
 
-
-BASEDIR = r'/home/rguktrkvalley/FRS-Server/app/.env'
-load_dotenv(BASEDIR)
+BASEDIR = os.path.abspath('')
+# BASEDIR = r'C:\\Users\\sathe\\OneDrive\\Documents\\FRS-Server\\app\\.env'
+file_path = os.path.join(BASEDIR,'.env')
+load_dotenv(file_path)
 
 uri = os.getenv("mongoDB_url")
 client = AsyncIOMotorClient(uri)

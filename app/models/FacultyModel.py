@@ -80,3 +80,19 @@ class SubjectAttendance(BaseModel):
 class AttendanceData(BaseModel):
     id_number: str
     attendance_report: Dict[str, SubjectAttendance]
+
+# this schema is  used in manage attendance route in the faculty module
+class AttendanceRecord2(BaseModel):
+    date: str
+    status: str
+    number_of_periods: int
+
+class SubjectAttendance2(BaseModel):
+    faculty_name: str
+    attendance: List[AttendanceRecord]
+
+
+class AttendanceData2(BaseModel):
+    id_number: str
+    year:str
+    attendance_report: Dict[str, SubjectAttendance]

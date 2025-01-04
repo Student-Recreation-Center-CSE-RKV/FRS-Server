@@ -3,8 +3,9 @@ from pydantic import BaseModel
 from models.StudentModel import AttendanceRecord
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Dict, List, Optional
-from models.FacultyModel import AttendanceUpdate,AttendanceData
+from models.FacultyModel import AttendanceUpdate,AttendanceData, AttendanceData2
 from db import database
+
 
 router = APIRouter()
 
@@ -369,19 +370,33 @@ async def update_attendance(student_id: str, attendance_count: int):
 
      
 #To initialise all students attendance initially to 0
-@router.post("/attendance/initialize", response_model=str)
-async def initialize_attendance():
-    students_data = await database.student.find().to_list(100)
-    if not students_data:
-        raise HTTPException(status_code=404, detail="No students found in the database.")
-    for student in students_data:
-        student_id = student.get("id_number")
-        # Update the attendance field directly, setting it to 0 if it's not present or if it exists
-        await database.student.update_one(
-            {"id_number": student_id},  # Match by the student's ID
-            {"$set": {"attendance": 0}}  # Set attendance to 0
+@router.post("/manage-attendance", response_model=dict)
+async def manage_attendance(data : AttendanceData2):
+    id_number = data.id_number
+    year = data.year
+    attendance_report = data.attendance_report
+    prefix = attendance_collections[year]
+    previous_data = await prefix.find_one({'id_number':id_number})
+    if previous_data is None:
+        raise HTTPException(status_code=404, detail="Student data not found")
+    for subject, subject_data in attendance_report.items():
+        existing_attendance = {
+            entry["date"]: entry
+            for entry in previous_data["attendance_report"][subject]["attendance"]
+        }
+        print(existing_attendance)
+        for updated_entry in subject_data.attendance:
+            existing_attendance[updated_entry.date] = updated_entry.dict()
+        previous_data["attendance_report"][subject]["attendance"] = list(
+            existing_attendance.values()
         )
-    return "Overall attendance initialized successfully for all students."
+    await database.E1.update_one(
+        {"id_number": id_number},
+        {"$set": {"attendance_report": previous_data["attendance_report"]}},
+    )
+
+    return {"status code": 200, "message": "Attendance updated successfully" }
+
 
 
 # Route to get attendance details for a specific student and for all students.

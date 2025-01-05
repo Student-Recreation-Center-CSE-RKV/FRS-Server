@@ -41,7 +41,11 @@ E3_timetable = db3['E3']
 E4_timetable = db3['E4']
 # client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URL)
  
-
+db4=client['student']
+E1_student=db4['E1']
+E2_student=db4['E2']
+E3_student=db4['E3']
+E4_student=db4['E4']
 
 
 

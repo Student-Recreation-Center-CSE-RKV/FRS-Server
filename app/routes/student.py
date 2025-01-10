@@ -1,11 +1,18 @@
-from fastapi import APIRouter,Body, HTTPException
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import smtplib
+from typing import Dict
+from fastapi import APIRouter, BackgroundTasks,Body, HTTPException
 from bson import ObjectId
-from .auth import get_password_hash,verify_password
+from pydantic import BaseModel, EmailStr
+from .auth import get_password_hash,verify_password,create_reset_token,verify_reset_token
 from models.StudentModel import Student,ProfileUpdate,PasswordChange,AttendanceRecord
 from db.database import student
 from db import database
 from datetime import datetime
 router = APIRouter()
+
+
 
 attendance_collections = {
         'E1': database.E1,
@@ -164,3 +171,118 @@ def calculate_percentage(attendance_report):
 
     return result
 
+
+def get_attendance_collection(string: str):
+    return attendance_collections[string]
+
+def get_titmtable_collections(string: str):
+    return timetable_collections[string]
+
+# # Email Sending Function
+# @router.post("/sendEmail")
+# async def send_email():
+   
+#     sender_email = "chincholivinitha195@gmail.com"
+#     sender_password = "Vinitha@321"
+
+    
+#     # Establish connection to the SMTP server
+#     with smtplib.SMTP("smtp.gmail.com", 587) as server:
+#         server.starttls()  # Upgrade the connection to secure
+#         server.login(sender_email, sender_password)  # Log in to your email
+#         # Test sending an email
+#         server.sendmail(sender_email, "chinvin9521@gmail.com", "Test email")
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+    confirm_password :str
+
+
+
+def send_reset_email(email: str, reset_token: str):
+    """Send the password reset email."""
+    reset_link = f"http://localhost:8000/reset-password?token={reset_token}"
+    subject = "Password Reset Request"
+    body = f"Click the link to reset your password: {reset_link}\nThis link will expire in 1 hour."
+    
+    sender_email = "chincholivinitha195@gmail.com"
+    sender_password = "vhwiyctnbtbynhkn"
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, email, msg.as_string())
+        server.quit()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+# Routes
+@router.post("/forgot-password", response_model=Dict[str, str])
+async def forgot_password(request: ForgotPasswordRequest):
+    """Handle forgot password request."""
+    student_data = student.find_one({"email": request.email})
+    if not student_data:
+        raise HTTPException(status_code=404, detail="Email not registered")
+
+    reset_token = create_reset_token(request.email)
+    print(reset_token)
+    send_reset_email(request.email, reset_token)
+    return {"message": "Password reset email sent"}
+
+
+
+@router.post("/reset-password", response_model=Dict[str, str])
+async def reset_password(request: ResetPasswordRequest):
+    """Reset the password using the provided token."""
+    # Check if new password and confirm password match
+    if request.new_password != request.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
+
+    # Verify the reset token and extract the email
+    email = verify_reset_token(request.token)
+    print(email)
+    # Hash the new password
+    hashed_password =get_password_hash(request.new_password)
+
+    print(hashed_password)
+    # # Update the password in MongoDB
+    await student.update_one(
+        {"email_address":email},
+        {"$set": {"password": hashed_password}, "$unset": {"reset_token": ""}},
+    )
+
+    # # if result.matched_count == 0:
+    # #     raise HTTPException(status_code=404, detail="Student not found")
+
+    return {"message": "Password reset successful"}
+
+# @router.post("/reset-password")
+# async def reset_password(request: ResetPasswordRequest):
+#     """Handle password reset requests."""
+#     email = verify_reset_token(request.token)
+#     if not email:
+#         raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+#     student = await student.find_one({"email": email})
+#     if not student:
+#         raise HTTPException(status_code=404, detail="Student not found")
+
+#     # Update the password and remove the token
+#     hashed_password = get_password_hash(request.new_password)
+#     await student.update_one(
+#         {"_id": student["_id"]},
+#         {"$set": {"hashed_password": hashed_password}, "$unset": {"reset_token": ""}},
+#     )
+
+#     return {"message": "Password reset successful"}

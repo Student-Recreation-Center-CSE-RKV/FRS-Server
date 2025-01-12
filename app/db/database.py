@@ -5,8 +5,7 @@ import os
 from dotenv import load_dotenv
 
 
-BASEDIR = os.path.abspath('')
-# BASEDIR = r'C:\\Users\\sathe\\OneDrive\\Documents\\FRS-Server\\app\\.env'
+BASEDIR = os.path.abspath('') 
 file_path = os.path.join(BASEDIR,'.env')
 load_dotenv(file_path)
 
@@ -41,8 +40,19 @@ E3_timetable = db3['E3']
 E4_timetable = db3['E4']
 # client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URL)
  
+db4=client['student']
+E1_student=db4['E1']
+E2_student=db4['E2']
+E3_student=db4['E3']
+E4_student=db4['E4']
 
 
+
+db5 = client['Exam_TimeTable']
+E1_exam_timetable = db5['E1']
+E2_exam_timetable = db5['E2']
+E3_exam_timetable = db5['E3']
+E4_exam_timetable = db5['E4']
 
 
 

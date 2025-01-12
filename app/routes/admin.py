@@ -234,7 +234,6 @@ async def create_sub_sheet(sheet,year):
         ('DB', 'DJ'),
         ('DK', 'DS')
     ]
-    # subjects = ['OS','DBMS','CN','DAA','SE','AI','ML','DL','IOT','CC','CD','STQA']
     year_details = student_collections[year]
     prefix_exams = exam_timetable_collections[year]
     exams = await prefix_exams.find_one({})
@@ -278,7 +277,12 @@ async def create_sub_sheet(sheet,year):
         for section in sections:
             create_section(sheet, start_column, section["name"], section["subheaders"])
             start_column = chr(ord(start_column) + len(section["subheaders"]))
-            
+    next_column = get_column_letter(sheet.max_column+1)
+    sheet.merge_cells(f"{next_column}1:{next_column}3")
+    sheet[f"{next_column}1"] = "Consolidated Percentage"
+    sheet[f"{next_column}1"].font = Font(name="Times New Roman", size=17, bold=True)
+    sheet[f"{next_column}1"].alignment = Alignment(horizontal="center", vertical="center",wrap_text=True)
+    
     documents = await year_details.find({}).to_list(length=None)
     for document in documents:
         section = document['section_name']
@@ -293,14 +297,26 @@ async def create_sub_sheet(sheet,year):
             student_name = student_details['first_name'] + " " + student_details['last_name']
             row = [sno, student_id, student_name, section]
             for subject in subjects:
+                consolidated_attendance = 0
                 row.append(attendance['attendance_report'][subject]['faculty_name'])
                 mid_1_attendance = get_attendance_report(attendance, exams['mid_exams']['MID-1'],subject)
                 mid_2_attendance = get_attendance_report(attendance, exams['mid_exams']['MID-2'],subject)
                 mid_3_attendance = get_attendance_report(attendance, exams['mid_exams']['MID-3'],subject)
-                row.extend(mid_1_attendance)
-                row.extend(mid_2_attendance)
-                row.extend(mid_3_attendance)
+                print(mid_1_attendance,mid_2_attendance,mid_3_attendance)   
+                if mid_1_attendance[0] > 0:
+                    row.extend(mid_1_attendance)
+                else:
+                    row.extend(['', '', '']) 
+                if mid_2_attendance[0] > 0:
+                    row.extend(mid_2_attendance)
+                else:
+                    row.extend(['', '', ''])  
+                if mid_3_attendance[0] > 0:
+                    row.extend(mid_3_attendance)
+                else:
+                    row.extend(['', '', ''])
             # print(row)
+            row.append(student_details['overall_attendance'])
             sheet.append(row)
             sno += 1
                 
@@ -314,7 +330,7 @@ async def create_sub_sheet(sheet,year):
             cell.border = thin_border
 
     
-def get_attendance_report(attendance, exam_date,subject):
+def get_attendance_report(attendance, exam_date, subject):
     attendance_report = attendance['attendance_report'][subject]['attendance']
     number_of_classes = 0
     number_of_attended = 0
@@ -323,7 +339,11 @@ def get_attendance_report(attendance, exam_date,subject):
             number_of_classes += report['number_of_periods']
             if report['status'] == 'present':
                 number_of_attended += report['number_of_periods']
-    return [number_of_classes, number_of_attended, (number_of_attended / number_of_classes) * 100]
+    
+    if number_of_classes == 0:
+        return [number_of_classes, number_of_attended, 0]
+    else:
+        return [number_of_classes, number_of_attended, (number_of_attended / number_of_classes) * 100]
     
     
     

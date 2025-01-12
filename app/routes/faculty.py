@@ -394,8 +394,10 @@ async def manage_attendance(data : AttendanceData2):
         {"id_number": id_number},
         {"$set": {"attendance_report": previous_data["attendance_report"]}},
     )
-
-    return {"status code": 200, "message": "Attendance updated successfully" }
+    attendance_data = await prefix.find_one({"id_number": id_number})
+    total_percentage = calculate_percentage(attendance_data)['total_percentage']
+    await database.student.update_one({"id_number": id_number,'$set':{"overall_attendance":total_percentage}})
+    return {"status code": 200, "message": "Attendance updated successfully", "total_percentage": total_percentage}
 
 
 

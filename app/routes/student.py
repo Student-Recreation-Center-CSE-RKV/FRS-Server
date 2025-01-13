@@ -8,6 +8,8 @@ from pydantic import BaseModel, EmailStr
 from .auth import get_password_hash,verify_password,create_reset_token,verify_reset_token
 from models.StudentModel import Student,ProfileUpdate,PasswordChange,AttendanceRecord
 from db.database import student
+import os
+from dotenv import load_dotenv
 from db import database
 from datetime import datetime
 router = APIRouter()
@@ -208,10 +210,12 @@ def send_reset_email(email: str, reset_token: str):
     reset_link = f"http://localhost:8000/reset-password?token={reset_token}"
     subject = "Password Reset Request"
     body = f"Click the link to reset your password: {reset_link}\nThis link will expire in 1 hour."
-    
-    sender_email = "chincholivinitha195@gmail.com"
-    sender_password = "vhwiyctnbtbynhkn"
 
+    sender_email = "chincholivinitha195@gmail.com"  
+    BASEDIR = os.path.abspath('') 
+    file_path = os.path.join(BASEDIR,'.env')
+    load_dotenv(file_path)
+    sender_password=os.getenv("sender_password")
     try:
         msg = MIMEMultipart()
         msg['From'] = sender_email

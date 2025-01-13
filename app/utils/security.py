@@ -11,6 +11,7 @@ from bson import ObjectId
 SECRET_KEY = "db9c2516a45ba1440ab9bc243c1b0c0648348f60a2c83150ba79207801447a38"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+RESET_TOKEN_EXPIRATION = 30
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -35,4 +36,19 @@ def decode_access_token(token: str):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except JWTError:
+        return None
+
+
+def create_reset_token(email: str):
+    """Create a JWT reset token."""
+    expiration = datetime.utcnow() + timedelta(minutes=RESET_TOKEN_EXPIRATION)
+    payload = {"email": email, "exp": expiration}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+def verify_reset_token(token: str):
+    """Verify a JWT reset token."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("email")
+    except jwt.JWTError:
         return None

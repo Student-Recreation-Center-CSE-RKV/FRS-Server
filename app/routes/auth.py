@@ -18,7 +18,7 @@ import os
 SECRET_KEY = "db9c2516a45ba1440ab9bc243c1b0c0648348f60a2c83150ba79207801447a38"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
+RESET_TOKEN_EXPIRATION = 30
 
 # MongoDB connection
 
@@ -133,3 +133,21 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
 @router.get("/users/me/items")
 async def read_own_items(current_user: User = Depends(get_current_active_user)):
     return [{"item_id": "Item1", "owner": current_user.username}]
+
+
+def create_reset_token(email: str):
+    """Create a JWT reset token."""
+    expiration = datetime.utcnow() + timedelta(minutes=RESET_TOKEN_EXPIRATION)
+    payload = {"email": email, "exp": expiration}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+def verify_reset_token(token: str):
+    """Verify a JWT reset token."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        print(payload.get("email"))
+        return payload.get("email")
+    except jwt.JWTError:
+        return None
+    
+    

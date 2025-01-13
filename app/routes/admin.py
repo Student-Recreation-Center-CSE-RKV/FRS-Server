@@ -1,16 +1,17 @@
+from datetime import datetime
 from math import e
 from pickle import EXT2
 from re import sub
 from typing import Literal, Union
 from venv import create
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from bson import ObjectId
 from numpy import number
 from models.FacultyModel import Attendance, Faculty
 from models.StudentModel import Student
 from pydantic import BaseModel
 from db import database
-from db.database import admin, faculty, student  # Assuming these collections exist
+from db.database import admin, faculty, student,db2,db3  # Assuming these collections exist
 from routes import auth  # For password hashing and verification
 from fastapi.responses import StreamingResponse
 import json
@@ -33,14 +34,159 @@ exam_timetable_collections = {
     'E2': database.E2_exam_timetable,
     'E3': database.E3_exam_timetable,
     'E4': database.E4_exam_timetable,
-}
+        }
 student_collections = {
     'E1': database.E1_student,
     'E2': database.E2_student,
     'E3': database.E3_student,
     'E4': database.E4_student,
-}
+            }
 router = APIRouter()
+
+
+# Helper function to calculate percentage
+def calculate_percentage(part: int, whole: int) -> float:
+    if whole == 0:
+        return 0.0
+    return round((part / whole) * 100, 2)
+@router.get("/admin/dashboard")
+async def admin_dashboard(date: str = Query(...)):
+    """
+    Admin dashboard to view timetable and attendance for all years and sections.
+    The `date` parameter is in YYYY-MM-DD format.
+    """
+    # Validate date
+    try:
+        query_date_obj = datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    day_of_week = query_date_obj.strftime("%A").lower()
+    today_date_obj = datetime.now()
+
+    overall_response = {
+        "date": date,
+        "years": []
+    }
+
+    # Iterate through all years (e.g., E1, E2, E3, E4)
+    for year in ["E1", "E2", "E3", "E4"]:
+        # Fetch timetable for the year
+        timetable_collection = db3[year]
+        timetable_data = await timetable_collection.find_one({})
+        if not timetable_data or day_of_week not in timetable_data:
+            raise HTTPException(status_code=404, detail=f"Timetable not found for {year} on {day_of_week}.")
+
+        day_timetable = timetable_data[day_of_week]
+
+        year_data = {
+            "year": year,
+            "sections": [],
+            "year_total_classes": 0,
+            "year_overall_present_percentage": "N/A" if query_date_obj > today_date_obj else 0.0
+        }
+
+        total_classes_for_year = 0
+        total_present_percentage_for_year = 0.0
+        total_sections = 0
+
+        # Iterate through sections (e.g., A, B, C, etc.)
+        for section, subjects in day_timetable.items():
+            section_data = {
+                "section": section,
+                "classes_scheduled_today": [],
+                "attendance_report": [],
+                "total_classes": 0,
+                "overall_present_percentage": "N/A" if query_date_obj > today_date_obj else 0.0
+            }
+
+            total_classes_for_section = 0
+            total_present_percentage_for_section = 0.0
+            total_subjects = 0
+
+            # Process each subject
+            for subject, periods in subjects.items():
+                num_classes = len(periods)
+                total_classes_for_section += num_classes
+
+                # Fetch attendance data for the subject
+                attendance_collection = db2[year]
+                attendance_records = attendance_collection.find({
+                    f"attendance_report.{subject}": {"$exists": True},
+                })
+                attendance_records_list = await attendance_records.to_list(length=None)
+
+                faculty_name = None
+                total_students = 0
+                total_present_students = 0
+
+                for record in attendance_records_list:
+                    subject_attendance = record["attendance_report"].get(subject, {})
+
+                    # Extract faculty name
+                    if not faculty_name:
+                        faculty_name = subject_attendance.get("faculty_name", "Unknown")
+
+                    attendance_report = subject_attendance.get("attendance", [])
+                    for attendance in attendance_report:
+                        if attendance["date"] == date:
+                            total_students += 1
+                            if attendance["status"].lower() == "present":
+                                total_present_students += 1
+
+                # Calculate attendance percentage for the subject
+                if total_students > 0:
+                    present_percentage = round((total_present_students / total_students) * 100, 2)
+                else:
+                    present_percentage = 0.0
+
+                section_data["classes_scheduled_today"].append({
+                    "subject": subject,
+                    "faculty_name": faculty_name,
+                    "number_of_periods": num_classes
+                })
+
+                if query_date_obj > today_date_obj:
+                    section_data["attendance_report"].append({
+                        "subject": subject,
+                        "faculty_name": faculty_name,
+                        "present_percentage": "N/A"
+                    })
+                else:
+                    section_data["attendance_report"].append({
+                        "subject": subject,
+                        "faculty_name": faculty_name,
+                        "present_percentage": present_percentage
+                    })
+
+                    total_present_percentage_for_section += present_percentage
+                    total_subjects += 1
+
+            # Calculate overall attendance percentage for the section
+            if total_subjects > 0 and query_date_obj <= today_date_obj:
+                section_data["overall_present_percentage"] = round(
+                    total_present_percentage_for_section / total_subjects, 2
+                )
+
+            section_data["total_classes"] = total_classes_for_section
+            year_data["sections"].append(section_data)
+
+            total_classes_for_year += total_classes_for_section
+            total_present_percentage_for_year += total_present_percentage_for_section
+            total_sections += total_subjects
+
+        # Calculate overall attendance percentage for the year
+        if total_sections > 0 and query_date_obj <= today_date_obj:
+            year_data["year_overall_present_percentage"] = round(
+                total_present_percentage_for_year / total_sections, 2
+            )
+
+        year_data["year_total_classes"] = total_classes_for_year
+        overall_response["years"].append(year_data)
+
+    return overall_response
+
+
 
 @router.post("/admin/login")
 async def admin_login(email_address: str, password: str):

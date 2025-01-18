@@ -1,4 +1,5 @@
 from datetime import datetime
+from email import message
 from math import e
 from pickle import EXT2
 from re import sub
@@ -20,6 +21,7 @@ from openpyxl.styles import Alignment,Font,Border,Side
 from openpyxl.utils import get_column_letter
 from io import BytesIO
 import os
+from models.AdminModel import TimeTableRequest
 
 attendance_collections = {
         'E1': database.E1,
@@ -41,6 +43,13 @@ student_collections = {
     'E3': database.E3_student,
     'E4': database.E4_student,
             }
+
+timetable_collections ={
+    "E1":database.E1_timetable,
+    "E2":database.E2_timetable,
+    "E3":database.E3_timetable,
+    "E4":database.E4_timetable
+}
 router = APIRouter()
 
 
@@ -511,7 +520,7 @@ def create_section(sheet, col_start, section_name, subheaders):
     else:
         col_end_index = col_start_index + len(subheaders) - 1
         col_start_letter = get_column_letter(col_start_index)
-        col_end_letter = get_column_letter(col_end_index)
+        col_end_letter = get_column_letter(col_end_index) 
         sheet.merge_cells(f"{col_start_letter}2:{col_end_letter}2")
         sheet[f"{col_start_letter}2"] = section_name
         sheet[f"{col_start_letter}2"].font = header_font
@@ -524,3 +533,31 @@ def create_section(sheet, col_start, section_name, subheaders):
         sheet[f"{col_letter}3"] = subheader
         sheet[f"{col_letter}3"].font = header_font
         sheet[f"{col_letter}3"].alignment = center_align
+
+
+@router.delete('/delete-attendance')
+async def delete_attendance():
+    years = ['E1','E2','E3','E4']
+    await database.student.update_many({}, {'$set': { 'overall_attendance': 0}})
+    data = dict()
+    try:
+        for year in years:
+            attendance_collection = attendance_collections[year]
+            result = attendance_collection.delete_many({})
+            data[year] = result.delete_count
+        return {"message":"Attendance deleted sucessfully","data":data}
+    except Exception as e:
+        raise HTTPException(status_code = 500,detail=f"error while deleting the attendance collection : {str(e)}")
+    
+    
+@router.post("/timetable")
+async def modify_timetable(request: TimeTableRequest):
+    year  = request.year
+    prefix = timetable_collections[year]
+    result = prefix.delete_many({})
+    inserted_result = await prefix.insert_one(request.timetable.dict())
+    if inserted_result.inserted_id:
+        return {"TimeTable" : request.timetable,"message":"Time table Sucessfully inserted","status_code":200}
+    else:
+        raise HTTPException(status_code=500,message="Internal server error")
+

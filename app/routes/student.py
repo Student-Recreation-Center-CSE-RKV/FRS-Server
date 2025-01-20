@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks,Body, HTTPException
 from bson import ObjectId
 from pydantic import BaseModel, EmailStr
 from .auth import get_password_hash,verify_password,create_reset_token,verify_reset_token
-from models.StudentModel import Student,ProfileUpdate,PasswordChange,AttendanceRecord
+from models.StudentModel import Student,ProfileUpdate,PasswordChange,ForgotPasswordRequest,ResetPasswordRequest
 from db.database import student
 from fastapi.responses import StreamingResponse
 from io import BytesIO  # For handling byte data
@@ -89,9 +89,6 @@ async def get_student_dashboard(id_number: str, date: str):
 
     return {"Student_id":id_number, "name":details['first_name']+' '+details['last_name'] , "Timetable":response}
 
-
-        
-
 # View Profile
 @router.get("/students/{id_number}/profile/")
 async def view_profile(id_number: str):
@@ -119,7 +116,6 @@ async def change_password(id_number: str, data: PasswordChange):
     else:
         raise HTTPException(status_code=400, detail="Incorrect password. Please try again.")
 
-
 # View Attendance Summary
 @router.get("/attendance")
 async def view_attendance_summary(id_number: str , year : str):
@@ -137,9 +133,6 @@ async def view_attendance_summary(id_number: str , year : str):
             }
         else:
             raise HTTPException(status_code=404, detail="Student details or attendance details are not found")
-
-
-
 
 def calculate_percentage(attendance_report):
     result = {}
@@ -183,42 +176,18 @@ def get_attendance_collection(string: str):
 def get_titmtable_collections(string: str):
     return timetable_collections[string]
 
-# # Email Sending Function
-# @router.post("/sendEmail")
-# async def send_email():
-   
-#     sender_email = "chincholivinitha195@gmail.com"
-#     sender_password = "Vinitha@321"
-
-    
-#     # Establish connection to the SMTP server
-#     with smtplib.SMTP("smtp.gmail.com", 587) as server:
-#         server.starttls()  # Upgrade the connection to secure
-#         server.login(sender_email, sender_password)  # Log in to your email
-#         # Test sending an email
-#         server.sendmail(sender_email, "chinvin9521@gmail.com", "Test email")
-
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-class ResetPasswordRequest(BaseModel):
-    token: str
-    new_password: str
-    confirm_password :str
-
-
 
 def send_reset_email(email: str, reset_token: str):
     """Send the password reset email."""
     reset_link = f"http://localhost:8000/reset-password?token={reset_token}"
     subject = "Password Reset Request"
-    body = f"Click the link to reset your password: {reset_link}\nThis link will expire in 1 hour."
-
-    sender_email = "chincholivinitha195@gmail.com"  
+    body = f"Click the link to reset your password: {reset_link}\nThis link will expire in 1 hour."  
+ 
     BASEDIR = os.path.abspath('') 
     file_path = os.path.join(BASEDIR,'.env')
     load_dotenv(file_path)
     sender_password=os.getenv("sender_password")
+    sender_email=os.getenv("sender_email")
     try:
         msg = MIMEMultipart()
         msg['From'] = sender_email
@@ -238,7 +207,7 @@ def send_reset_email(email: str, reset_token: str):
 @router.post("/forgot-password", response_model=Dict[str, str])
 async def forgot_password(request: ForgotPasswordRequest):
     """Handle forgot password request."""
-    student_data = student.find_one({"email": request.email})
+    student_data = student.find_one({"email_address": request.email})
     if not student_data:
         raise HTTPException(status_code=404, detail="Email not registered")
 
@@ -247,53 +216,31 @@ async def forgot_password(request: ForgotPasswordRequest):
     send_reset_email(request.email, reset_token)
     return {"message": "Password reset email sent"}
 
-
-
 @router.post("/reset-password", response_model=Dict[str, str])
 async def reset_password(request: ResetPasswordRequest):
     """Reset the password using the provided token."""
+    
+    email = verify_reset_token(request.token)
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid or expired token time limit")
+
     # Check if new password and confirm password match
     if request.new_password != request.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
 
-    # Verify the reset token and extract the email
-    email = verify_reset_token(request.token)
-    print(email)
+    student_d = await student.find_one({"email_address": email})
+    if not student_d:
+        raise HTTPException(status_code=404, detail="Student not found")
+
     # Hash the new password
     hashed_password =get_password_hash(request.new_password)
-
-    print(hashed_password)
+    # print(hashed_password)
     # # Update the password in MongoDB
     await student.update_one(
         {"email_address":email},
         {"$set": {"password": hashed_password}, "$unset": {"reset_token": ""}},
     )
-
-    # # if result.matched_count == 0:
-    # #     raise HTTPException(status_code=404, detail="Student not found")
-
     return {"message": "Password reset successful"}
-
-# @router.post("/reset-password")
-# async def reset_password(request: ResetPasswordRequest):
-#     """Handle password reset requests."""
-#     email = verify_reset_token(request.token)
-#     if not email:
-#         raise HTTPException(status_code=400, detail="Invalid or expired token")
-
-#     student = await student.find_one({"email": email})
-#     if not student:
-#         raise HTTPException(status_code=404, detail="Student not found")
-
-#     # Update the password and remove the token
-#     hashed_password = get_password_hash(request.new_password)
-#     await student.update_one(
-#         {"_id": student["_id"]},
-#         {"$set": {"hashed_password": hashed_password}, "$unset": {"reset_token": ""}},
-#     )
-
-#     return {"message": "Password reset successful"}
-
 
 def generate_pdf(student_name: str, student_id: str) -> BytesIO:
     """Generate a PDF dynamically for the hall ticket."""

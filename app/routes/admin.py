@@ -3,16 +3,17 @@ from email import message
 from math import e
 from pickle import EXT2
 from re import sub
-from typing import Literal, Union
+from typing import Dict, List, Literal, Union
 from venv import create
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from bson import ObjectId
+from models.AdminModel import ExamTimetable,UpdateCRRequest,YearAssignment
 from numpy import number
 from models.FacultyModel import Attendance, Faculty
 from models.StudentModel import Student
 from pydantic import BaseModel
 from db import database
-from db.database import admin, faculty, student,db2,db3  # Assuming these collections exist
+from db.database import db,admin, faculty, student,db2,db3 ,db4,db5 # Assuming these collections exist
 from routes import auth  # For password hashing and verification
 from fastapi.responses import StreamingResponse
 import json
@@ -27,9 +28,8 @@ attendance_collections = {
         'E1': database.E1,
         'E2': database.E2, 
         'E3': database.E3,
-        'E4': database.E4,
+        'E4': database.E4
     }
-
 
 exam_timetable_collections = {
     'E1': database.E1_exam_timetable,
@@ -51,6 +51,291 @@ timetable_collections ={
     "E4":database.E4_timetable
 }
 router = APIRouter()
+
+
+
+@router.put("/update-student-year-sem/")
+async def update_student_year_sem(student_id: str, year: str, semester: int):
+    """
+    Updates the year and semester for a specific student.
+    Args:
+        student_id: The ID of the student to update.
+        year: The updated year (e.g., "E1", "E2", "E3", "E4").
+        semester: The updated semester (e.g., 1 or 2).
+    """
+    # Validate inputs
+    if year not in ["E1", "E2", "E3", "E4"]:
+        raise HTTPException(status_code=400, detail="Invalid year. Must be one of ['E1', 'E2', 'E3', 'E4'].")
+    if semester not in [1, 2]:
+        raise HTTPException(status_code=400, detail="Invalid semester. Must be 1 or 2.")
+
+    # Find the student by ID
+    student_data = await student.find_one({"id_number": student_id})
+    if not student_data:
+        raise HTTPException(status_code=404, detail=f"Student with ID {student_id} not found.")
+
+    # Check if the student is already in the final semester
+    if student_data["year"] == "E4" and student_data["semester"] == 2:
+        raise HTTPException(
+            status_code=400,
+            detail="The student is already in the final semester and cannot be updated further."
+        )
+
+    # Update the student's year and semester in the database
+    result = await student.update_one(
+        {"id_number": student_id},
+        {"$set": {"year": year, "semester": semester}}
+    )
+
+    if result.modified_count == 0:
+        raise HTTPException(status_code=500, detail="Failed to update the student's year and semester.")
+
+    return {
+        "message": f"Student year and semester updated successfully for ID {student_id}.",
+        "updated_year": year,
+        "updated_semester": semester
+    }
+
+
+@router.put("/update-cr-id/")
+async def update_cr_id(request: UpdateCRRequest):
+    """
+    Update the CR ID for a specific section and year in the student database.
+    """
+    year = request.year
+    section_name = request.section_name
+    cr_id = request.cr_id
+
+    # Find the section based on year and section_name
+    year_data=db4[year]
+    # print(year_data)
+    section = await year_data.find_one({"section_name": section_name})
+    # print(section)
+    if not section:
+        raise HTTPException(status_code=404, detail=f"Section {section_name} in year {year} not found.")
+
+    # Check if the student belongs to the section
+    if cr_id not in section.get("students", []):
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Student {cr_id} does not belong to section {section_name} in year {year}."
+        )
+
+    # Update the CR ID
+    update_result = await db4[year].update_one(
+        {"_id": section["_id"]}, {"$set": {"cr_id": cr_id}}
+    )
+
+    if update_result.modified_count == 0:
+        raise HTTPException(status_code=500, detail="Failed to update CR ID.")
+    
+    return {"message": f"CR ID for section {section_name} in year {year} updated successfully."}
+
+
+async def get_subjects_for_section(
+    year: str, section_name: str, db4
+) -> List[str]:
+    """
+    Fetch the list of subjects available for a specific section in a given year.
+
+    Args:
+    - year: Year of the section (e.g., "e1", "e2").
+    - section_name: Name of the section (e.g., "A", "B").
+    - db: The database instance.
+
+    Returns:
+    - A list of subject names for the given section.
+    """
+    # Access the collection for the specified year
+    year_collection = db4[year]
+
+    # Find the section based on the section name
+    section_data = await year_collection.find_one({"section_name": section_name})
+
+    if not section_data:
+        raise HTTPException(
+            status_code=404, detail=f"Section {section_name} in year {year} not found."
+        )
+
+    # Extract the subject names from the section data
+    subjects = [subject["subject_name"] for subject in section_data.get("subjects", [])]
+
+    if not subjects:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No subjects found for section {section_name} in year {year}.",
+        )
+    return subjects
+
+
+# Route to store or update the exam timetable
+@router.put("/update-exam-timetable/")
+async def update_exam_timetable(data: ExamTimetable):
+    """
+    Stores or updates the exam timetable for a specific year and semester.
+    """
+    year_collection = db5[data.year]  # Access the collection for the specified year
+
+    # Fetch the subjects for the specified section
+    try:
+        section_subjects = await get_subjects_for_section(data.year, 'A', db4)
+    except HTTPException as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+    # Gather all subjects listed in sem_exam
+    timetable_subjects = set(data.sem_exam.keys())
+
+    # Validate the subjects
+    invalid_subjects = timetable_subjects - set(section_subjects)
+    if invalid_subjects:
+        raise HTTPException(
+            status_code=400,
+            detail=f"The following subjects in the timetable are invalid for year {data.year}: {', '.join(invalid_subjects)}"
+        )
+
+    # Check if a timetable for the given semester already exists
+    existing_timetable = await year_collection.find_one({"semester": data.semester})
+
+    if existing_timetable:
+        # Update the existing timetable
+        result = await year_collection.update_one(
+            {"_id": existing_timetable["_id"]},
+            {"$set": {
+                "mid_exams": data.mid_exams,
+                "sem_exam": data.sem_exam
+            }}
+        )
+        if result.modified_count:
+            return {"message": f"Timetable for semester {data.semester} in {data.year} updated successfully."}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update the timetable.")
+    else:
+        # Insert a new timetable
+        result = await year_collection.insert_one({
+            "semester": data.semester,
+            "mid_exams": data.mid_exams,
+            "sem_exam": data.sem_exam
+        })
+        if result.inserted_id:
+            return {"message": f"Timetable for semester {data.semester} in {data.year} added successfully."}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to add the timetable.")
+
+
+
+
+@router.post("/update-timetable-for-faculty/")
+async def update_timetable_for_faculty(assignments: YearAssignment):
+    """
+    Incrementally update the timetable and faculty data for the given year.
+    Dynamically add new subjects if they do not exist in the timetable.
+    """
+    year = assignments.year
+    timetable_collection = db3[year]  # Access the year-specific timetable collection
+    faculty_collection = db["Faculty"]  # Faculty collection
+
+    # Fetch available subjects for the year
+    year_data = db4[year]
+    available_subjects = set()
+
+    async for semester_data in year_data.find():
+        available_subjects.update(
+            subject["subject_name"] for subject in semester_data.get("subjects", [])
+        )
+
+    if not available_subjects:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No subjects found for year {year} in the database."
+        )
+
+    # Fetch the existing timetable document or initialize a new one
+    existing_timetable_doc = await timetable_collection.find_one({"type": "assignments"})
+    timetable_doc = existing_timetable_doc or {"type": "assignments", "subjects": {}}
+
+    for subject_assignment in assignments.assignments:
+        subname = subject_assignment.subname
+
+        # Check if the subject is valid for the year
+        if subname not in available_subjects:
+            # If subname is new, dynamically add it to the timetable doc
+            timetable_doc["subjects"].setdefault(subname, [])
+
+        # Prepare the new data for this subject
+        new_faculty_data = [
+            {"faculty_name": fa.faculty_name, "sec": fa.sec}
+            for fa in subject_assignment.data
+        ]
+
+        # Merge or update the timetable subject data
+        existing_subject_data = timetable_doc["subjects"].get(subname, [])
+
+        updated_subject_data = []
+        for new_faculty in new_faculty_data:
+            existing_match = next(
+                (ef for ef in existing_subject_data if ef["faculty_name"] == new_faculty["faculty_name"]),
+                None
+            )
+            if existing_match:
+                # Merge sections if there are overlaps
+                existing_match["sec"] = list(set(existing_match["sec"]) | set(new_faculty["sec"]))
+                updated_subject_data.append(existing_match)
+            else:
+                # Add new assignment if not present
+                updated_subject_data.append(new_faculty)
+
+        # Update timetable with the merged data
+        timetable_doc["subjects"][subname] = updated_subject_data
+
+        # Update each faculty's subject list
+        for fa in subject_assignment.data:
+            faculty_name_split = fa.faculty_name.split()
+            faculty = await faculty_collection.find_one({
+                "first_name": faculty_name_split[0],
+                "last_name": faculty_name_split[-1],
+            })
+
+            if not faculty:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Faculty {fa.faculty_name} not found."
+                )
+
+            # Merge or update the faculty's subject list
+            existing_subjects = faculty.get("subjects", [])
+            existing_assignment = next(
+                (subj for subj in existing_subjects if subj["subject_name"] == subname), None
+            )
+
+            if existing_assignment:
+                # Merge sections if they overlap
+                existing_assignment["sections"] = list(set(existing_assignment["sections"]) | set(fa.sec))
+            else:
+                # Add new assignment if not present
+                existing_subjects.append({
+                    "subject_name": subname,
+                    "year": year,
+                    "sections": fa.sec
+                })
+
+            # Update the faculty's subject list in the database
+            await faculty_collection.update_one(
+                {"_id": faculty["_id"]},
+                {"$set": {"subjects": existing_subjects}}
+            )
+
+    # Store the updated timetable document in the database
+    if existing_timetable_doc:
+        # Update only if the document has changed
+        await timetable_collection.update_one(
+            {"_id": existing_timetable_doc["_id"]},
+            {"$set": {"subjects": timetable_doc["subjects"]}}
+        )
+    else:
+        # Insert a new document
+        await timetable_collection.insert_one(timetable_doc)
+
+    return {"message": "Timetable and faculty assignments updated successfully."}
 
 
 # Helper function to calculate percentage
@@ -238,32 +523,11 @@ async def create_faculty(faculty_data: Faculty = Depends(Faculty)):
     result = await faculty.insert_one(faculty_data)
     # Retrieve the newly created faculty document
     created_faculty = await faculty.find_one({"_id": result._id})
-    return {"message": "Faculty member created successfully", "faculty": created_faculty}
-
-# # View Admin Dashboard
-# @router.get("/admin/dashboard")
-# async def get_admin_dashboard(username: str):
-#     details = await admin.find_one({'username': username})
-#     if details:
-#         # Add more statistics here, like counts of faculty and students
-#         faculty_count = await faculty.count_documents({})
-#         student_count = await student.count_documents({})
-#         return {
-#             "admin_details": details,
-#             "faculty_count": faculty_count,
-#             "student_count": student_count
-#         }
-#     raise HTTPException(status_code=404, detail="Admin not found")
-# # Manage Attendance
-# @router.post('/manage-attendance')
-# async def manage_attendance(student_id: str, attendance: bool):
-#     # Here you would implement the logic to mark attendance
-#     # This can be a separate collection or within the student document
-#     res = await student.update_one({'id_number': student_id}, {'$set': {'attendance': attendance}})
-#     if res.modified_count > 0:
-#         return {'message': "Attendance updated successfully"}
-#     raise HTTPException(status_code=404, detail="Student not found or attendance not updated")
-
+    if result.inserted_id and result.acknowledged:
+        return {'message':'True'}
+    else:
+        return {'message':'False'}
+   
 # Get All Users (Faculty and Students)
 def convert_objectid_to_str(documents):
     if isinstance(documents, list):
@@ -334,13 +598,6 @@ async def update_student(student_id: str,student_data: Student = Depends(Student
             {'$set': student_data}
         )
     return {"message": "Student updated successfully"} if res.modified_count else {"message": "No changes made"}
-
-@router.get('/Scheduled_classes')
-async def manage_attendance(date: str, year:str):
-    
-    return {}
-
-
 
 @router.get('/download-attendance')
 async def get_attendance_summary():

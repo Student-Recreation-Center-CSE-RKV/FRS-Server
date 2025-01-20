@@ -52,6 +52,7 @@ class Student(BaseModel):
     password:str
     gender: Gender
     overall_attendance: Optional[int] = Field(default=0, exclude=True)
+    semester:str
     # subject_summary: Dict[str, SubjectSummary] = Field(default_factory=dict)  # Subject-wise attendance summary
     
     # Convert ObjectId to string if present 
@@ -93,3 +94,11 @@ class StudentDetails(BaseModel):
 # class CapturedImages(BaseModel):
 #     form_data: StudentDetails 
 #     images: List[str]
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+    confirm_password :str

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from models.StudentModel import AttendanceRecord
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Dict, List, Optional
-from models.FacultyModel import AttendanceUpdate,AttendanceData, AttendanceData2
+from models.FacultyModel import AttendanceUpdate,AttendanceData, AttendanceData2,ConsolidatedAttendanceModel
 from db import database
 
 
@@ -504,5 +504,50 @@ def calculate_percentage(attendance_report):
 
 
 
+@router.post('/consolidated-attendance')
+async def consolidated_attendance(data: ConsolidatedAttendanceModel):
+    id_number = data.id_number
+    prefix = attendance_collections[data.year]
+    percentage = 0
+    attendance = await prefix.find_one({"id_number": id_number})
+    if not attendance:
+        return {"status": "Failed", "message": "No student record found."}
 
+    for subject_name, attendance_data in data.subject_attendance.items():
+        if subject_name not in attendance.get("attendance_report", {}):
+            return {"status": "Failed", "message": f"Subject '{subject_name}' not found for student {id_number}."}
 
+        number_of_periods = sum(entry.number_of_periods for entry in attendance_data.consolidated_attendance)
+        number_of_classes = len(attendance["attendance_report"][subject_name]["attendance"])
+        if number_of_classes == 0:
+            return {"status": "Failed", "message": f"No attendance records found for subject '{subject_name}'."}
+        
+        percentage += (number_of_periods / number_of_classes) * 100
+
+        await prefix.update_one(
+            {"id_number": id_number, f"attendance_report.{subject_name}.consolidated_attendance": {"$exists": False}},
+            {"$set": {f"attendance_report.{subject_name}.consolidated_attendance": []}}
+        )
+
+        update_query = {
+            "$push": {
+                f"attendance_report.{subject_name}.consolidated_attendance": {
+                    "$each": [entry.dict() for entry in attendance_data.consolidated_attendance]
+                }
+            }
+        }
+
+        result = await prefix.update_one(
+            {"id_number": id_number, f"attendance_report.{subject_name}": {"$exists": True}},
+            update_query
+        )
+
+        if result.modified_count == 0:
+            return {"status": "Failed", "message": f"Failed to update consolidated attendance for '{subject_name}'."}
+
+    await database.student.update_one(
+        {"id_number": id_number},
+        {"$set": {'consolidated_percentage': percentage}}
+    )
+
+    return {"status": "Success", "message": "Consolidated attendance added successfully for all subjects."}

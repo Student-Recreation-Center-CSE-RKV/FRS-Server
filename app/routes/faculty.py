@@ -219,25 +219,25 @@ async def update_attendance(attendance_data: AttendanceUpdate):
         attendance_field = f"attendance_report.{subject}.attendance"
         # Add or update attendance entry for present students
         
-        existing_entry = await collection.find_one({
-                "id_number": student["id_number"],
-                f"{attendance_field}.date": today_date
-            })        
-        if existing_entry:
-            continue
-        else:
-            await collection.update_one(
-                {"id_number": student_id},
-                {
-                    "$set": {f"attendance_report.{subject}.faculty_name": faculty_name},
-                    "$push": {attendance_field: {
-                        "date": today_date,
-                        "status": "present",
-                        "number_of_periods": number_of_periods
-                    }}
-                },
-                upsert=True
-            )
+        # existing_entry = await collection.find_one({
+        #         "id_number": student["id_number"],
+        #         f"{attendance_field}.date": today_date
+        #     })        
+        # if existing_entry:
+        #     continue
+        # else:
+        await collection.update_one(
+            {"id_number": student_id},
+            {
+                "$set": {f"attendance_report.{subject}.faculty_name": faculty_name},
+                "$push": {attendance_field: {
+                    "date": today_date,
+                    "status": "present",
+                    "number_of_periods": number_of_periods
+                }}
+            },
+            upsert=True
+        )
     # Mark absent for students not in the list of IDs
     for student in relevant_students:
         if student["id_number"] not in ids:

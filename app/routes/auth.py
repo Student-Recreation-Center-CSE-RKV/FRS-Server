@@ -5,7 +5,11 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from db.database import admin
+import os
 from typing import Optional
+from dotenv import load_dotenv
+
+
 """from models import user as models
 from utils import security
 from crud import user as crud
@@ -15,10 +19,15 @@ from dotenv import load_dotenv
 
 import os
 """
-SECRET_KEY = "db9c2516a45ba1440ab9bc243c1b0c0648348f60a2c83150ba79207801447a38"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-RESET_TOKEN_EXPIRATION = 30
+
+BASEDIR = os.path.abspath('') 
+file_path = os.path.join(BASEDIR,'.env')
+load_dotenv(file_path)
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+RESET_TOKEN_EXPIRATION = int(os.getenv("RESET_TOKEN_EXPIRATION"))
 
 # MongoDB connection
 
@@ -76,7 +85,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire.isoformat()})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -104,26 +113,11 @@ async def get_current_active_user(current_user: UserInDB = Depends(get_current_u
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
-@router.post("/token", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = authenticate_user(db, form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+async def generate_access_token(username:str,role:str):
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": username,"role":role}, expires_delta=access_token_expires
     )
-    # Redirect logic based on role
-    if user.role == "admin":
-        return {"redirect": "/admin/dashboard"}
-    elif user.role == "student":
-        return {"redirect": "/student/dashboard/{user.id}"}
-    elif user.role == "faculty":
-        return {"redirect": "/faculty/dashboard"}
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/users/me/", response_model=User)

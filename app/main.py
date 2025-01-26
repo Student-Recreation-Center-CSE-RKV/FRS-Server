@@ -1,10 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI,HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from routes import auth, admin, student, faculty,user
 from routes.model import get_embd
-
+from models.AdminModel import LoginCredentials
+from db import database
+from routes.auth import verify_password,generate_access_token
 #from  db  import database
 
 # Use comments_collection in your CRUD operations
@@ -19,6 +21,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.post('/login')
+async def login(data: LoginCredentials):
+    email = data.email.lower()
+    password = data.password
+    role = data.role.lower()
+
+    # Mapping roles to respective collections
+    role_collection_map = {
+        "admin": database.admin,
+        "faculty": database.faculty,
+        "student": database.student
+    }
+
+    if role not in role_collection_map:
+        raise HTTPException(status_code=400, detail="Invalid role specified")
+
+    collection = role_collection_map[role]
+
+    # Fetch user from the respective collection
+    user = await collection.find_one({"email": email})
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Verify password
+    if not verify_password(password, user["password"]):
+        raise HTTPException(status_code=401, detail="Incorrect password")
+    
+    token = await generate_access_token(email, role)
+
+    return {"message": "Login successful", "token": token}
+    
+
 
 # Include routers from both your code and your friend's code
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])

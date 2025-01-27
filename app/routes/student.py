@@ -33,6 +33,8 @@ timetable_collections = {
         'E4': database.E4_timetable,
     }
 
+
+
 # student dashboard Route
 @router.get("/dashboard")
 async def get_student_dashboard(id_number: str, date: str):

@@ -51,3 +51,13 @@ class WeeklySchedule(BaseModel):
 class TimeTableRequest(BaseModel):
     year:str
     timetable : WeeklySchedule
+
+
+
+class LoginCredentials(BaseModel):
+    email:str
+    password:str
+    role:str
+    
+class DashboardRequest(BaseModel):
+    today_date : str

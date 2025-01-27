@@ -7,7 +7,7 @@ from typing import Dict, List, Literal, Union
 from venv import create
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from bson import ObjectId
-from models.AdminModel import ExamTimetable,UpdateCRRequest,YearAssignment
+from models.AdminModel import ExamTimetable,UpdateCRRequest,YearAssignment,DashboardRequest
 from numpy import number
 from models.FacultyModel import Attendance, Faculty
 from models.StudentModel import Student
@@ -51,6 +51,7 @@ timetable_collections ={
     "E4":database.E4_timetable
 }
 router = APIRouter()
+
 
 
 
@@ -343,13 +344,14 @@ def calculate_percentage(part: int, whole: int) -> float:
     if whole == 0:
         return 0.0
     return round((part / whole) * 100, 2)
-@router.get("/admin/dashboard")
-async def admin_dashboard(date: str = Query(...)):
+@router.post("/dashboard")
+async def admin_dashboard(data: DashboardRequest):
     """
     Admin dashboard to view timetable and attendance for all years and sections.
     The `date` parameter is in YYYY-MM-DD format.
     """
     # Validate date
+    date = data.today_date
     try:
         query_date_obj = datetime.strptime(date, "%Y-%m-%d")
     except ValueError:

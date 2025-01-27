@@ -115,8 +115,11 @@ async def change_password(id_number: str, data: PasswordChange):
 
 # View Attendance Summary
 @router.get("/attendance")
-async def view_attendance_summary(id_number: str , year : str):
+async def view_attendance_summary(id_number: str):
     if id_number:
+        student_data=await student.find_one({'id_number':id_number})
+        year=student_data.get('year')
+        print(year)
         prefix = attendance_collections[year]
         if prefix is not None:
             attendance_report = await prefix.find_one({"id_number": id_number}) 

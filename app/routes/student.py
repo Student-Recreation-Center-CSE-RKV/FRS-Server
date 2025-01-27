@@ -2,10 +2,10 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import smtplib
 from typing import Dict
-from fastapi import APIRouter, BackgroundTasks,Body, HTTPException
+from fastapi import APIRouter, BackgroundTasks,Body, Depends, HTTPException
 from bson import ObjectId
 from pydantic import BaseModel, EmailStr
-from .auth import get_password_hash,verify_password,create_reset_token,verify_reset_token
+from .auth import get_password_hash,verify_password,create_reset_token,verify_reset_token,get_current_user
 from models.StudentModel import Student,ProfileUpdate,PasswordChange,ForgotPasswordRequest,ResetPasswordRequest
 from db.database import student
 from fastapi.responses import StreamingResponse
@@ -32,7 +32,6 @@ timetable_collections = {
         'E3': database.E3_timetable,
         'E4': database.E4_timetable,
     }
-
 
 
 # student dashboard Route
@@ -120,10 +119,16 @@ async def change_password(id_number: str, data: PasswordChange):
 
 # View Attendance Summary
 @router.get("/attendance")
-async def view_attendance_summary(id_number: str):
-    if id_number:
-        student_data=await student.find_one({'id_number':id_number})
+async def view_attendance_summary(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "student":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
+    email= current_user["email"]
+    if email:
+        student_data=await student.find_one({'email_address':email})
         year=student_data.get('year')
+        id_number=student_data['id_number']
         print(year)
         prefix = attendance_collections[year]
         if prefix is not None:
@@ -132,7 +137,7 @@ async def view_attendance_summary(id_number: str):
             attendance_report = None
         if  attendance_report:
             attendance_summary = calculate_percentage(attendance_report)
-            return { "attendance_report": attendance_report["attendance_report"] ,
+            return {"studentId":id_number, "attendance_report": attendance_report["attendance_report"] ,
                 "attendance_summary" : attendance_summary
             
             }

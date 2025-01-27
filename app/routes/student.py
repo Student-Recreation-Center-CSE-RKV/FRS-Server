@@ -8,6 +8,9 @@ from pydantic import BaseModel, EmailStr
 from .auth import get_password_hash,verify_password,create_reset_token,verify_reset_token
 from models.StudentModel import Student,ProfileUpdate,PasswordChange,ForgotPasswordRequest,ResetPasswordRequest
 from db.database import student
+from fastapi.responses import StreamingResponse
+from io import BytesIO  # For handling byte data
+from reportlab.pdfgen import canvas  # For PDF generation
 import os
 from dotenv import load_dotenv
 from db import database
@@ -241,3 +244,33 @@ async def reset_password(request: ResetPasswordRequest):
         {"$set": {"password": hashed_password}, "$unset": {"reset_token": ""}},
     )
     return {"message": "Password reset successful"}
+
+def generate_pdf(student_name: str, student_id: str) -> BytesIO:
+    """Generate a PDF dynamically for the hall ticket."""
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer)
+    c.drawString(100, 750, f"Hall Ticket for {student_name}")
+    c.drawString(100, 730, f"Student ID: {student_id}")
+    c.drawString(100, 710, f"Issue Date: {datetime.now().strftime('%Y-%m-%d')}")
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+@router.get("/student/download-hallticket/{student_id}")
+async def download_hall_ticket(student_id: str):
+    # Check if the student exists and has hall ticket released
+    student = student.find_one({"_id": student_id})
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    if not student.get("hallticket_released"):
+        raise HTTPException(status_code=403, detail="Hall ticket not released for this student")
+
+    # Generate the hall ticket
+    pdf_buffer = generate_pdf(student["name"], str(student["_id"]))
+    # pdf_buffer=generate_pdf("Thanisha","R200439")
+    # Serve the PDF as a downloadable file
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=hall_ticket_{student_id}.pdf"}
+    )

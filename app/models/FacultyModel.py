@@ -96,3 +96,18 @@ class AttendanceData2(BaseModel):
     id_number: str
     year:str
     attendance_report: Dict[str, SubjectAttendance]
+    
+    
+    
+class ConsolidatedAttendance(BaseModel):
+    dates: List[str]
+    number_of_periods: int
+    reason: str
+
+class SubjectAttendance(BaseModel):
+    consolidated_attendance: List[ConsolidatedAttendance]
+
+class ConsolidatedAttendanceModel(BaseModel):
+    id_number: str
+    year: str
+    subject_attendance: Dict[str, SubjectAttendance]

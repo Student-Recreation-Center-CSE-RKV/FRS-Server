@@ -7,11 +7,14 @@ from typing import Dict, List, Literal, Union
 from venv import create
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from bson import ObjectId
-from models.AdminModel import ExamTimetable,UpdateCRRequest,YearAssignment,DashboardRequest
+from seaborn import dark_palette
+from sympy import sec
+from models.AdminModel import ExamTimetable,UpdateCRRequest,YearAssignment,TodayClassesRequest,ClassAttendanceRequest
 from numpy import number
 from models.FacultyModel import Attendance, Faculty
-from models.StudentModel import Student
+from models.StudentModel import Branch, Student
 from pydantic import BaseModel
+from .faculty import calculate_percentage
 from db import database
 from db.database import db,admin, faculty, student,db2,db3 ,db4,db5 # Assuming these collections exist
 from routes import auth  # For password hashing and verification
@@ -223,7 +226,22 @@ async def update_exam_timetable(data: ExamTimetable):
             raise HTTPException(status_code=500, detail="Failed to add the timetable.")
 
 
-
+@router.get('/get-student-attendance')
+async def get_student_attendance(student_id: str, year: str):
+    """
+    Get the attendance details of a student for a specific year.
+    """
+    # Fetch the student's attendance data for the year
+    attendance_data = attendance_collections[year]
+    student_attendance = await attendance_data.find_one({"id_number": student_id})
+    student_details = await student.find_one({"id_number": student_id})
+    if not student_details: 
+        raise HTTPException(status_code=404, detail=f"Student {student_id} not found.")
+    if not student_attendance:
+        raise HTTPException(status_code=404, detail=f"Attendance data not found for student {student_id} in year {year}.")
+    for field in ['_id', 'password', 'semester','is_admin']:
+        student_details.pop(field, None)
+    return {'student_details':student_details,'attendance':student_attendance['attendance_report']}
 
 @router.post("/update-timetable-for-faculty/")
 async def update_timetable_for_faculty(assignments: YearAssignment):
@@ -264,7 +282,7 @@ async def update_timetable_for_faculty(assignments: YearAssignment):
 
         # Prepare the new data for this subject
         new_faculty_data = [
-            {"faculty_name": fa.faculty_name, "sec": fa.sec}
+            {"faculty_username": fa.faculty_username, "sec": fa.sec}
             for fa in subject_assignment.data
         ]
 
@@ -274,7 +292,7 @@ async def update_timetable_for_faculty(assignments: YearAssignment):
         updated_subject_data = []
         for new_faculty in new_faculty_data:
             existing_match = next(
-                (ef for ef in existing_subject_data if ef["faculty_name"] == new_faculty["faculty_name"]),
+                (ef for ef in existing_subject_data if ef["faculty_username"] == new_faculty["faculty_username"]),
                 None
             )
             if existing_match:
@@ -290,16 +308,14 @@ async def update_timetable_for_faculty(assignments: YearAssignment):
 
         # Update each faculty's subject list
         for fa in subject_assignment.data:
-            faculty_name_split = fa.faculty_name.split()
             faculty = await faculty_collection.find_one({
-                "first_name": faculty_name_split[0],
-                "last_name": faculty_name_split[-1],
+               'email_address':fa.faculty_username
             })
 
             if not faculty:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Faculty {fa.faculty_name} not found."
+                    detail=f"Faculty {fa.faculty_username} not found."
                 )
 
             # Merge or update the faculty's subject list
@@ -339,13 +355,13 @@ async def update_timetable_for_faculty(assignments: YearAssignment):
     return {"message": "Timetable and faculty assignments updated successfully."}
 
 
-# Helper function to calculate percentage
-def calculate_percentage(part: int, whole: int) -> float:
-    if whole == 0:
-        return 0.0
-    return round((part / whole) * 100, 2)
-@router.post("/dashboard")
-async def admin_dashboard(data: DashboardRequest):
+# # Helper function to calculate percentage
+# def calculate_percentage(part: int, whole: int) -> float:
+#     if whole == 0:
+#         return 0.0
+#     return round((part / whole) * 100, 2)
+@router.post("/Today_calsses")
+async def admin_Today_classes(data: TodayClassesRequest):
     """
     Admin dashboard to view timetable and attendance for all years and sections.
     The `date` parameter is in YYYY-MM-DD format.
@@ -360,140 +376,103 @@ async def admin_dashboard(data: DashboardRequest):
     day_of_week = query_date_obj.strftime("%A").lower()
     today_date_obj = datetime.now()
 
-    overall_response = {
-        "date": date,
-        "years": []
-    }
+    overall_response = {}
 
     # Iterate through all years (e.g., E1, E2, E3, E4)
-    for year in ["E1", "E2", "E3", "E4"]:
-        # Fetch timetable for the year
-        timetable_collection = db3[year]
-        timetable_data = await timetable_collection.find_one({})
-        if not timetable_data or day_of_week not in timetable_data:
-            raise HTTPException(status_code=404, detail=f"Timetable not found for {year} on {day_of_week}.")
+    year = data.year
+    # Fetch timetable for the year
+    timetable_collection = db3[year]
+    timetable_data = await timetable_collection.find_one({})
+    faculty_data = await timetable_collection.find_one({'type':'assignments'})
+    if not timetable_data or day_of_week not in timetable_data:
+        raise HTTPException(status_code=404, detail=f"Timetable not found for {year} on {day_of_week}.")
 
-        day_timetable = timetable_data[day_of_week]
+    day_timetable = timetable_data[day_of_week]
+    year_data = {}
+    # print(day_timetable)
+    for section, subjects in day_timetable.items():
+        year_data[section] = {}  
+        for subject, periods in subjects.items():
+            faculty_details_list = []
 
-        year_data = {
-            "year": year,
-            "sections": [],
-            "year_total_classes": 0,
-            "year_overall_present_percentage": "N/A" if query_date_obj > today_date_obj else 0.0
-        }
+            for faculty_entry in faculty_data['subjects'].get(subject, []):
+                if section in faculty_entry['sec']: 
+                    faculty_email = faculty_entry['faculty_username']
+                        
+                    faculty_details = await database.faculty.find_one({'email_address': faculty_email})
+                        
+                    if faculty_details:
+                        faculty_name = f"{faculty_details['first_name']} {faculty_details['last_name']}"
+                        faculty_phone = faculty_details['phone_number']
 
-        total_classes_for_year = 0
-        total_present_percentage_for_year = 0.0
-        total_sections = 0
+                        faculty_details_list.append({
+                            "faculty_name": faculty_name,
+                            "faculty_phone": faculty_phone,
+                            "email_address": faculty_email
+                        })
 
-        # Iterate through sections (e.g., A, B, C, etc.)
-        for section, subjects in day_timetable.items():
-            section_data = {
-                "section": section,
-                "classes_scheduled_today": [],
-                "attendance_report": [],
-                "total_classes": 0,
-                "overall_present_percentage": "N/A" if query_date_obj > today_date_obj else 0.0
+            year_data[section][subject] = {
+                "faculty": faculty_details_list,
+                "periods": periods
             }
-
-            total_classes_for_section = 0
-            total_present_percentage_for_section = 0.0
-            total_subjects = 0
-
-            # Process each subject
-            for subject, periods in subjects.items():
-                num_classes = len(periods)
-                total_classes_for_section += num_classes
-
-                # Fetch attendance data for the subject
-                attendance_collection = db2[year]
-                attendance_records = attendance_collection.find({
-                    f"attendance_report.{subject}": {"$exists": True},
-                })
-                attendance_records_list = await attendance_records.to_list(length=None)
-
-                faculty_name = None
-                total_students = 0
-                total_present_students = 0
-
-                for record in attendance_records_list:
-                    subject_attendance = record["attendance_report"].get(subject, {})
-
-                    # Extract faculty name
-                    if not faculty_name:
-                        faculty_name = subject_attendance.get("faculty_name", "Unknown")
-
-                    attendance_report = subject_attendance.get("attendance", [])
-                    for attendance in attendance_report:
-                        if attendance["date"] == date:
-                            total_students += 1
-                            if attendance["status"].lower() == "present":
-                                total_present_students += 1
-
-                # Calculate attendance percentage for the subject
-                if total_students > 0:
-                    present_percentage = round((total_present_students / total_students) * 100, 2)
-                else:
-                    present_percentage = 0.0
-
-                section_data["classes_scheduled_today"].append({
-                    "subject": subject,
-                    "faculty_name": faculty_name,
-                    "number_of_periods": num_classes
-                })
-
-                if query_date_obj > today_date_obj:
-                    section_data["attendance_report"].append({
-                        "subject": subject,
-                        "faculty_name": faculty_name,
-                        "present_percentage": "N/A"
-                    })
-                else:
-                    section_data["attendance_report"].append({
-                        "subject": subject,
-                        "faculty_name": faculty_name,
-                        "present_percentage": present_percentage
-                    })
-
-                    total_present_percentage_for_section += present_percentage
-                    total_subjects += 1
-
-            # Calculate overall attendance percentage for the section
-            if total_subjects > 0 and query_date_obj <= today_date_obj:
-                section_data["overall_present_percentage"] = round(
-                    total_present_percentage_for_section / total_subjects, 2
-                )
-
-            section_data["total_classes"] = total_classes_for_section
-            year_data["sections"].append(section_data)
-
-            total_classes_for_year += total_classes_for_section
-            total_present_percentage_for_year += total_present_percentage_for_section
-            total_sections += total_subjects
-
-        # Calculate overall attendance percentage for the year
-        if total_sections > 0 and query_date_obj <= today_date_obj:
-            year_data["year_overall_present_percentage"] = round(
-                total_present_percentage_for_year / total_sections, 2
-            )
-
-        year_data["year_total_classes"] = total_classes_for_year
-        overall_response["years"].append(year_data)
-
+    overall_response[year] = year_data    
     return overall_response
 
-
-
-@router.post("/admin/login")
-async def admin_login(email_address: str, password: str):
-    faculty_member = await faculty.find_one({"email_address": email_address})
-    if faculty_member and auth.verify_password(password, faculty_member['password']):
-        if faculty_member.get('is_admin'):
-            return {"message": "Login successful", "admin": faculty_member}
+@router.post('/class-attendance')
+async def class_attendance(data:ClassAttendanceRequest):
+    year = data.year
+    section = data.section
+    date = data.date
+    subject = data.subject
+    student_database = student_collections[year]
+    attendance_collection = attendance_collections[year]
+    section_datails = await student_database.find_one({'section_name':section})
+    presenties = []
+    absenties = []
+    number_of_periods = 0
+    cancelled=True
+    for student in section_datails['students']:
+        student_attendance = await attendance_collection.find_one({'id_number':student})
+        if not subject in student_attendance['attendance_report']:
+            raise HTTPException(status_code=404,detail="subject not found")
         else:
-            raise HTTPException(status_code=403, detail="User  is not an admin")
-    raise HTTPException(status_code=401, detail="Invalid username or password")
-
+            for record in student_attendance["attendance_report"][subject]["attendance"]:
+                if record["date"] == date:
+                    cancelled=False
+                    if record["status"] == "present":
+                        presenties.append(student)
+                        number_of_periods = record["number_of_periods"]
+                    else:
+                        absenties.append(student)
+                        number_of_periods = record["number_of_periods"]
+                    break
+                
+    if cancelled:
+        return{'message':'Class is cancelled'}
+    else:
+        percentage = len(presenties) / len(section_datails['students']) * 100
+        
+        return {'presenties':presenties,'absenties':absenties,'percentage':percentage,'number_of_periods':number_of_periods}
+                    
+                
+@router.post('/dashboard')
+async def admin_dashboard():
+    #all years percentage
+    years = ['E1','E1','E1','E1']
+    overall_response = {}
+    for year in years:
+        year_data = []
+        year_collection = attendance_collections[year]
+        attendance_data = await year_collection.find({}).to_list(None)
+        for record in attendance_data:
+            result = calculate_percentage(record)
+            year_data.append(result['total_percentage']['total_percentage'])
+        if len(year_data) == 0:
+            year_percentage = 0 
+        else:   
+            year_percentage = sum(year_data) / len(year_data)
+        overall_response[year] = year_percentage
+    return overall_response
 # Create User (Faculty or Student)
 @router.post("/create-student", response_model=Student)
 async def create_student(student_data: Student = Depends(Student)):
@@ -819,4 +798,89 @@ async def modify_timetable(request: TimeTableRequest):
         return {"TimeTable" : request.timetable,"message":"Time table Sucessfully inserted","status_code":200}
     else:
         raise HTTPException(status_code=500,message="Internal server error")
+    
 
+@router.post('/visualize-attendance')
+async def visualize_attendance():
+    try:
+        years = ['E1']
+        sections = ['A', 'B', 'C', 'D', 'E']
+        overall_response = {}
+        total_year_attendance = []
+
+        for year in years:
+            year_data = {}
+            total_students=0
+            for section in sections:
+                section_data = await student_collections[year].find_one({'section_name': section})
+                if not section_data:
+                    continue
+                students = section_data.get("students", [])
+                students_attendance = []
+                total_students += len(students)
+                for student_id in students:
+                    student_attendance = await database.student.find_one({"id_number": student_id})
+                    if not student_attendance:
+                        continue
+                    student_percentage = student_attendance.get("overall_attendance", 0)
+                    students_attendance.append(student_percentage)
+
+                if students_attendance:
+                    average_percentage = sum(students_attendance) / len(students_attendance)
+                else:
+                    average_percentage = 0
+                
+                year_data[section] = average_percentage
+                total_year_attendance.extend(students_attendance)
+
+            if total_year_attendance:
+                year_data["total_percentage"] = sum(total_year_attendance) / len(total_year_attendance)
+            else:
+                year_data["total_percentage"] = 0
+            year_data["total_students"] = total_students
+            overall_response[year] = year_data
+        
+        return overall_response
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+@router.post('/get-faculty')
+async def get_faculty():
+    try:
+        response = []
+        years = ['E1']
+        for year in years:
+            assignments_data = await timetable_collections[year].find_one({'type': 'assignments'})
+            if not assignments_data:
+                raise HTTPException(status_code=404, detail="Assignments data not found")
+            
+            faculties_data = await database.faculty.find({}).to_list(None)
+            faculty_dict = {}
+            
+            for faculty in faculties_data:
+                faculty_email = faculty.get("email_address")
+                faculty_info = {
+                    "first_name": faculty.get("first_name"),
+                    "last_name": faculty.get("last_name"),
+                    "email": faculty_email,
+                    "phone_number": faculty.get("phone_number"),
+                    "department": faculty.get("department"),
+                    "designation": faculty.get("designation"),
+                    "qualification": faculty.get("qualification"),
+                    "subjects": []
+                }
+                faculty_dict[faculty_email] = faculty_info
+
+            for subject, faculty_list in assignments_data.get("subjects", {}).items():
+                for faculty_entry in faculty_list:
+                    faculty_email = faculty_entry["faculty_username"]
+                    if faculty_email in faculty_dict:
+                        faculty_dict[faculty_email]["subjects"].append({
+                            "subject": subject,
+                            "sections": faculty_entry["sec"]
+                        })
+            
+            response = list(faculty_dict.values())
+        return {"message": "Success", "faculty_details": response}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")

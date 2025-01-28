@@ -16,7 +16,7 @@ class UpdateCRRequest(BaseModel):
     
 
 class FacultyAssignment(BaseModel):
-    faculty_name: str
+    faculty_username: str
     sec: List[str]
 
 class SubjectAssignment(BaseModel):
@@ -59,5 +59,12 @@ class LoginCredentials(BaseModel):
     password:str
     role:str
     
-class DashboardRequest(BaseModel):
+class TodayClassesRequest(BaseModel):
     today_date : str
+    year:str
+    
+class ClassAttendanceRequest(BaseModel):
+    year:str
+    date:str
+    section:str
+    subject:str

@@ -1,10 +1,11 @@
+import time
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from jose import JWTError, jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 from passlib.context import CryptContext
-from db.database import admin
+from db.database import admin,student
 import os
 from typing import Optional
 from dotenv import load_dotenv
@@ -85,28 +86,43 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire.isoformat()})
+    # to_encode.update({"exp": expire.isoformat()})
+    expire = int(time.time()) + 3600 # One hour time limit
+    to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    print(to_encode)
     return encoded_jwt
 
+
+
 async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-    except JWTError:
-        raise credentials_exception
-    user = get_user(db, username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    return user
+        print(payload)
+        email = payload.get("sub")
+        role = payload.get("role")
+        print(email)
+        if not email or not role:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+
+
+        if role != "student":
+            return {"email": email, "role": role}
+
+        # Fetch student ID
+        student_data = await student.find_one({"email_address":email})
+        student_id=student_data["id_number"]
+        print(student_id)
+        if not student_id:
+            raise HTTPException(status_code=404, detail="Student not found")
+        return {"email": email, "role": role}
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+
 
 async def get_current_active_user(current_user: UserInDB = Depends(get_current_user)):
     if current_user.disabled:

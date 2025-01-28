@@ -33,11 +33,11 @@ class YearAssignment(BaseModel):
 
 
 class DaySchedule(BaseModel):
-    A: Optional[Dict[str, list[str]]]
-    B: Optional[Dict[str, list[str]]]
-    C: Optional[Dict[str, list[str]]]
-    D: Optional[Dict[str, list[str]]]
-    E: Optional[Dict[str, list[str]]]
+    A: Optional[Dict[str, List[str]]]
+    B: Optional[Dict[str, List[str]]]
+    C: Optional[Dict[str, List[str]]]
+    D: Optional[Dict[str, List[str]]]
+    E: Optional[Dict[str, List[str]]]
 
 class WeeklySchedule(BaseModel):
     monday: Optional[DaySchedule]

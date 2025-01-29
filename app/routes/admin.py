@@ -524,18 +524,18 @@ def convert_objectid_to_str(documents):
                 documents[key] = str(value)
     return documents
 
-@router.get('/users')
-async def get_all_users(user_type: str):
-    if user_type == "faculty":
-        faculty_list = await faculty.find().to_list(None)  # Get all faculty
-        faculty_list = convert_objectid_to_str(faculty_list)  # Convert ObjectId to string
-        return {'faculty': faculty_list}
-    elif user_type == "student":
-        student_list = await student.find().to_list(None)  # Get all students
-        student_list = convert_objectid_to_str(student_list)  # Convert ObjectId to string
-        return {'students': student_list}
-    raise HTTPException(status_code=400, detail="Invalid user type")
-
+@router.get('/get-faculty-emails')
+async def get_all_users():
+    faculty_data = await database.faculty.find({}).to_list(None)
+    if faculty_data:
+        response = []
+        for faculty in faculty_data:
+            faculty_name = faculty['first_name'] + " " + faculty['last_name']
+            email = faculty['email_address']
+            response.append({"faculty_name": faculty_name, "email": email})
+        return {'status_code':200,'faculty_data':response}
+    else:
+        return {"message": "No faculty members found.",'status_code':404}
 
 # Delete User (Faculty or Student)
 @router.delete('/delete-user')
@@ -788,13 +788,27 @@ async def delete_attendance():
         return {"message":"Attendance deleted sucessfully","data":data}
     except Exception as e:
         raise HTTPException(status_code = 500,detail=f"error while deleting the attendance collection : {str(e)}")
+
+@router.get("/timetable/{year}")
+async def get_timetable(year: str):
+    """Fetch the timetable for a given academic year."""
+    prefix = timetable_collections.get(year)
+
+    timetable = await prefix.find_one({})
+    if not timetable:
+        raise HTTPException(status_code=404, detail="Timetable not found")
+
+    # Convert ObjectId to string for JSON serialization
+    timetable["_id"] = None  
+    return {"status_code": 200, "timetable": timetable}
     
     
+
 @router.post("/timetable")
 async def modify_timetable(request: TimeTableRequest):
     year  = request.year
     prefix = timetable_collections[year]
-    result = prefix.delete_many({})
+    await prefix.delete_many({})
     inserted_result = await prefix.insert_one(request.timetable.dict())
     if inserted_result.inserted_id:
         return {"message":"Time table Sucessfully inserted" , "status_code":200}

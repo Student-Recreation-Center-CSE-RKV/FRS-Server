@@ -313,10 +313,9 @@ async def update_timetable_for_faculty(assignments: YearAssignment):
             })
 
             if not faculty:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Faculty {fa.faculty_username} not found."
-                )
+                return {'status_code':404,
+                        # 'detail':f'Faculty {fa.faculty_username} not found'
+                        }
 
             # Merge or update the faculty's subject list
             existing_subjects = faculty.get("subjects", [])
@@ -352,7 +351,7 @@ async def update_timetable_for_faculty(assignments: YearAssignment):
         # Insert a new document
         await timetable_collection.insert_one(timetable_doc)
 
-    return {"message": "Timetable and faculty assignments updated successfully."}
+    return {'status_code':200}
 
 
 # # Helper function to calculate percentage
@@ -360,7 +359,7 @@ async def update_timetable_for_faculty(assignments: YearAssignment):
 #     if whole == 0:
 #         return 0.0
 #     return round((part / whole) * 100, 2)
-@router.post("/Today_calsses")
+@router.post("/Today_classes")
 async def admin_Today_classes(data: TodayClassesRequest):
     """
     Admin dashboard to view timetable and attendance for all years and sections.
@@ -455,10 +454,10 @@ async def class_attendance(data:ClassAttendanceRequest):
         return {'presenties':presenties,'absenties':absenties,'percentage':percentage,'number_of_periods':number_of_periods}
                     
                 
-@router.post('/dashboard')
+@router.get('/dashboard')
 async def admin_dashboard():
     #all years percentage
-    years = ['E1','E1','E1','E1']
+    years = ['E1']
     overall_response = {}
     for year in years:
         year_data = []
@@ -471,7 +470,10 @@ async def admin_dashboard():
             year_percentage = 0 
         else:   
             year_percentage = sum(year_data) / len(year_data)
-        overall_response[year] = year_percentage
+        overall_response[year] = round(year_percentage,2)
+    overall_response['E2'] = 40
+    overall_response['E3'] = 50
+    overall_response['E4'] = 60
     return overall_response
 # Create User (Faculty or Student)
 @router.post("/create-student", response_model=Student)
@@ -795,12 +797,12 @@ async def modify_timetable(request: TimeTableRequest):
     result = prefix.delete_many({})
     inserted_result = await prefix.insert_one(request.timetable.dict())
     if inserted_result.inserted_id:
-        return {"TimeTable" : request.timetable,"message":"Time table Sucessfully inserted","status_code":200}
+        return {"message":"Time table Sucessfully inserted" , "status_code":200}
     else:
-        raise HTTPException(status_code=500,message="Internal server error")
+        return {'status_code':500,'message':"Internal server error"}
     
 
-@router.post('/visualize-attendance')
+@router.get('/visualize-attendance')
 async def visualize_attendance():
     try:
         years = ['E1']
@@ -839,12 +841,24 @@ async def visualize_attendance():
                 year_data["total_percentage"] = 0
             year_data["total_students"] = total_students
             overall_response[year] = year_data
-        
+        overall_response["E2"] = {"A": 50,"B": 0,"C": 50,"D": 50,"E": 50,"total_percentage": 50,"total_students": 15}
+        overall_response["E3"] = {"A": 50,"B": 0,"C": 50,"D": 50,"E": 50,"total_percentage": 50,"total_students": 15}
+        overall_response["E4"] = {"A": 50,"B": 0,"C": 50,"D": 50,"E": 50,"total_percentage": 50,"total_students": 15}
         return overall_response
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-@router.post('/get-faculty')
+    
+@router.get('/get-subjects')
+async def get_subjects():
+    subjects = {
+        'E1': ['DM', 'EP', 'CHE', 'EP LAB', 'OOPS LAB'],
+        'E2': ['DSA', 'COA', 'DLD'],
+        'E3': ['DAA', 'OS', 'CN'],
+        'E4': ['ML', 'CC', 'CS']
+        }
+    return subjects
+@router.get('/get-faculty')
 async def get_faculty():
     try:
         response = []
@@ -867,7 +881,7 @@ async def get_faculty():
                     "department": faculty.get("department"),
                     "designation": faculty.get("designation"),
                     "qualification": faculty.get("qualification"),
-                    "subjects": []
+                    "subjects": {}
                 }
                 faculty_dict[faculty_email] = faculty_info
 
@@ -875,10 +889,10 @@ async def get_faculty():
                 for faculty_entry in faculty_list:
                     faculty_email = faculty_entry["faculty_username"]
                     if faculty_email in faculty_dict:
-                        faculty_dict[faculty_email]["subjects"].append({
+                        faculty_dict[faculty_email]["subjects"][year] = {
                             "subject": subject,
                             "sections": faculty_entry["sec"]
-                        })
+                        }
             
             response = list(faculty_dict.values())
         return {"message": "Success", "faculty_details": response}

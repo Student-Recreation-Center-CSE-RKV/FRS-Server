@@ -58,12 +58,11 @@ E4_exam_timetable = db5['E4']
 
 
 
-
-
-
-
-
-
+db6 = client['Subjects']
+E1_subjects = db6['E1']
+E2_subjects = db6['E2']
+E3_subjects = db6['E3']
+E4_subjects = db6['E4']
 
 
 

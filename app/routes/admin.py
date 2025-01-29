@@ -34,6 +34,13 @@ attendance_collections = {
         'E4': database.E4
     }
 
+subjects_collections = {
+    'E1':database.E1_subjects,
+    'E2':database.E2_subjects,
+    'E3':database.E3_subjects,
+    'E4':database.E4_subjects
+}
+
 exam_timetable_collections = {
     'E1': database.E1_exam_timetable,
     'E2': database.E2_exam_timetable,
@@ -55,7 +62,8 @@ timetable_collections ={
 }
 router = APIRouter()
 
-
+# async def check_token(token):
+    
 
 
 @router.put("/update-student-year-sem/")
@@ -865,12 +873,14 @@ async def visualize_attendance():
     
 @router.get('/get-subjects')
 async def get_subjects():
-    subjects = {
-        'E1': ['DM', 'EP', 'CHE', 'EP LAB', 'OOPS LAB'],
-        'E2': ['DSA', 'COA', 'DLD'],
-        'E3': ['DAA', 'OS', 'CN'],
-        'E4': ['ML', 'CC', 'CS']
-        }
+    subjects = {}
+    years = ['E1','E2','E3','E4']
+    for year in years:
+        subjects_data = await subjects_collections[year].find_one({'sem':'sem-1'})
+        if not subjects_data:
+            return {'status_code':404,'message':'subjects reocrds not found'}
+        subjects[year] = subjects_data['subjects']
+    
     return subjects
 @router.get('/get-faculty')
 async def get_faculty():

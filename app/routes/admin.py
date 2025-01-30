@@ -68,7 +68,7 @@ router = APIRouter()
 
 
 @router.put("/update-year-and-semester/")
-async def bulk_update_students(request: str):
+async def update_years_and_sem(request: str):
     """
     Bulk updates students' year and semester based on the request type.
     Args:

@@ -97,6 +97,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
+        print(token)
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         print(payload)
         email = payload.get("sub")
@@ -112,7 +113,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         # Fetch student ID
         student_data = await student.find_one({"email_address":email})
         student_id=student_data["id_number"]
-        print(student_id)
         if not student_id:
             raise HTTPException(status_code=404, detail="Student not found")
         return {"email": email, "role": role}

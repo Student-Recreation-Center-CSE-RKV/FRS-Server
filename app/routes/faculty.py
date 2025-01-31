@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Dict, List, Optional
 from models.FacultyModel import AttendanceUpdate,AttendanceData, AttendanceData2,ConsolidatedAttendanceModel
 from db import database
-
+from . import auth
 
 router = APIRouter()
 
@@ -24,12 +24,13 @@ timetable_collections={
 today_date = str(date.today()) 
 student_data=database.student
 faculty_collection=database.faculty
-@router.get("/faculty/dashboard/")
-async def faculty_dashboard(email_address: str, date: str):
+@router.get("/dashboard/")
+async def faculty_dashboard(date: str,user: dict = Depends(auth.get_current_user)):
     """
     Displays all the classes available for a faculty on a specific date.
     If the attendance for a class is not recorded (e.g., future dates), it shows 'N/A' for attendance.
     """
+    email_address = user["email"]
     try:
         # Convert the date string into a datetime object
         date_obj = datetime.strptime(date, "%Y-%m-%d")
@@ -474,7 +475,6 @@ async def get_attendance(
 # function to calculate the percentage of the attendance
 def calculate_percentage(attendance_report):
     result = {}
-    
     total_percentage = 0
     for subject, data in attendance_report['attendance_report'].items():
         num_classes = 0

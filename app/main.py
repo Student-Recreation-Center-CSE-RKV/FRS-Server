@@ -1,4 +1,4 @@
-from fastapi import FastAPI,HTTPException
+from fastapi import FastAPI,HTTPException,Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -6,7 +6,7 @@ from routes import auth, admin, student, faculty,user
 from routes.model import get_embd
 from models.AdminModel import LoginCredentials
 from db import database
-from routes.auth import verify_password,generate_access_token
+from routes.auth import verify_password,generate_access_token,get_current_user
 #from  db  import database
 
 # Use comments_collection in your CRUD operations
@@ -55,6 +55,25 @@ async def login(data: LoginCredentials):
     return {"message": "Login successful", "token": token}
     
 
+@app.get("/profile")
+async def profile(user: dict = Depends(get_current_user)):
+    if user['role'] == 'faculty':
+        faculty_data = await database.faculty.find_one({"email_address": user['email']})
+        if faculty_data:
+            faculty_data.pop("_id", None)
+            faculty_data.pop("password", None)
+        return faculty_data
+    
+    elif user['role'] == 'student':
+        student_data = await database.students.find_one({"email_address": user['email']})
+        if student_data:
+            student_data.pop("_id", None)
+            student_data.pop("password", None)
+        return student_data
+    
+    return {"error": "Invalid role"}
+
+        
 
 # Include routers from both your code and your friend's code
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])

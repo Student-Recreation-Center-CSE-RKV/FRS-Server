@@ -41,7 +41,7 @@ async def login(data: LoginCredentials):
     collection = role_collection_map[role]
 
     # Fetch user from the respective collection
-    user = await collection.find_one({"email": email})
+    user = await collection.find_one({"email_address": email})
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

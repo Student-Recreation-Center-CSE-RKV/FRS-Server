@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Dict, List, Optional
 from models.FacultyModel import AttendanceUpdate,AttendanceData, AttendanceData2,ConsolidatedAttendanceModel
 from db import database
-
+from . import auth
 
 router = APIRouter()
 
@@ -24,12 +24,14 @@ timetable_collections={
 today_date = str(date.today()) 
 student_data=database.student
 faculty_collection=database.faculty
-@router.get("/faculty/dashboard/")
-async def faculty_dashboard(email_address: str, date: str):
+@router.get("/dashboard/")
+async def faculty_dashboard(date: str,user: dict = Depends(auth.get_current_user)):    
     """
     Displays all the classes available for a faculty on a specific date.
     If the attendance for a class is not recorded (e.g., future dates), it shows 'N/A' for attendance.
     """
+    email_address = user["email"]
+
     try:
         # Convert the date string into a datetime object
         date_obj = datetime.strptime(date, "%Y-%m-%d")
@@ -43,11 +45,21 @@ async def faculty_dashboard(email_address: str, date: str):
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
     # Step 1: Fetch faculty details using email address
+   
     faculty = await faculty_collection.find_one({"email_address": email_address})
+    years = ['E1']
+    subjects = []
+    for year in years:
+        assignments = await timetable_collections[year].find_one({'type':'assignments'})
+        if assignments:
+            for subject, data in assignments['subjects'].items():
+                for record in data:
+                    if record['faculty_username'] == email_address:
+                        subjects.append({"subject_name": subject, "year":year,"sections": record["sec"]})
     if not faculty:
         raise HTTPException(status_code=404, detail="Faculty not found")
 
-    subjects = faculty.get("subjects", [])  # List of subjects with year and sections
+      # List of subjects with year and sections
     if not subjects:
         return {"message": "No subjects assigned to this faculty."}
 
@@ -187,6 +199,7 @@ async def faculty_dashboard(email_address: str, date: str):
         "attendance": attendance_details,
     }
     return result
+
 
 @router.post("/mark_attendance/")
 async def update_attendance(attendance_data: AttendanceUpdate):

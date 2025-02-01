@@ -26,7 +26,7 @@ student_data=database.student
 faculty_collection=database.faculty
 @router.get("/dashboard/")
 async def faculty_dashboard(date: str,user: dict = Depends(auth.get_current_user)):    
-    """
+  """
     Displays all the classes available for a faculty on a specific date.
     If the attendance for a class is not recorded (e.g., future dates), it shows 'N/A' for attendance.
     """
@@ -487,7 +487,6 @@ async def get_attendance(
 # function to calculate the percentage of the attendance
 def calculate_percentage(attendance_report):
     result = {}
-    
     total_percentage = 0
     for subject, data in attendance_report['attendance_report'].items():
         num_classes = 0

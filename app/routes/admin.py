@@ -5,7 +5,7 @@ from pickle import EXT2
 from re import sub
 from typing import Dict, List, Literal, Union
 from venv import create
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query,Header
 from bson import ObjectId
 from seaborn import dark_palette
 from sympy import sec
@@ -16,6 +16,7 @@ from models.StudentModel import Branch, Student
 from pydantic import BaseModel
 from .faculty import calculate_percentage
 from db import database
+from .faculty import calculate_percentage
 from db.database import db,admin, faculty, student,db2,db3 ,db4,db5 # Assuming these collections exist
 from routes import auth  # For password hashing and verification
 from fastapi.responses import StreamingResponse
@@ -63,50 +64,67 @@ timetable_collections ={
 router = APIRouter()
 
 # async def check_token(token):
-    
+
+async def check_admin_email(email: str):
+    admin_data = await admin.find_one({"email_address": email})
+    if admin_data:
+        return True 
+    else:
+        return False
 
 
-@router.put("/update-student-year-sem/")
-async def update_student_year_sem(student_id: str, year: str, semester: int):
+@router.put("/update-year-and-semester/")
+async def update_years_and_sem(request: str,user: dict = Depends(auth.get_current_user)):
     """
-    Updates the year and semester for a specific student.
+    Bulk updates students' year and semester based on the request type.
     Args:
-        student_id: The ID of the student to update.
-        year: The updated year (e.g., "E1", "E2", "E3", "E4").
-        semester: The updated semester (e.g., 1 or 2).
+        request: A string indicating whether to update "year" or "sem".
     """
-    # Validate inputs
-    if year not in ["E1", "E2", "E3", "E4"]:
-        raise HTTPException(status_code=400, detail="Invalid year. Must be one of ['E1', 'E2', 'E3', 'E4'].")
-    if semester not in [1, 2]:
-        raise HTTPException(status_code=400, detail="Invalid semester. Must be 1 or 2.")
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
+    if request not in ["year", "sem"]:
+        raise HTTPException(status_code=400, detail="Invalid request. Must be 'year' or 'sem'.")
 
-    # Find the student by ID
-    student_data = await student.find_one({"id_number": student_id})
-    if not student_data:
-        raise HTTPException(status_code=404, detail=f"Student with ID {student_id} not found.")
+    students = await student.find().to_list(None) # Fetch all students
+    if not students:
+        raise HTTPException(status_code=404, detail="No students found.")
 
-    # Check if the student is already in the final semester
-    if student_data["year"] == "E4" and student_data["semester"] == 2:
-        raise HTTPException(
-            status_code=400,
-            detail="The student is already in the final semester and cannot be updated further."
+    updates = []
+
+    for student_data in students:
+        current_year = student_data["year"]
+        current_semester = student_data["semester"]
+
+        if request == "year":
+            if current_year == "E4" and current_semester == 2:
+                continue  # Skip students already in the final semester
+            
+            new_year = {"E1": "E2", "E2": "E3", "E3": "E4"}.get(current_year, current_year)
+            new_semester = 1 if current_semester == 2 else current_semester  # Reset to sem-1 if it's sem-2
+            
+            updates.append({
+                "id_number": student_data["id_number"],
+                "year": new_year,
+                "semester": new_semester
+            })
+        
+        elif request == "sem":
+            if current_semester == 1:
+                updates.append({
+                    "id_number": student_data["id_number"],
+                    "semester": 2
+                })
+    if not updates:
+        raise HTTPException(status_code=400, detail="No students were eligible for updates.")
+
+    # Perform bulk update
+    for update in updates:
+        await student.update_one(
+            {"id_number": update["id_number"]},
+            {"$set": {"year": update.get("year", student_data["year"]), "semester": update.get("semester", student_data["semester"])}}
         )
-
-    # Update the student's year and semester in the database
-    result = await student.update_one(
-        {"id_number": student_id},
-        {"$set": {"year": year, "semester": semester}}
-    )
-
-    if result.modified_count == 0:
-        raise HTTPException(status_code=500, detail="Failed to update the student's year and semester.")
-
-    return {
-        "message": f"Student year and semester updated successfully for ID {student_id}.",
-        "updated_year": year,
-        "updated_semester": semester
-    }
+    
+    return {"message": "Students updated successfully", "updated_students": len(updates)}
 
 
 @router.put("/update-cr-id/")
@@ -182,10 +200,12 @@ async def get_subjects_for_section(
 
 # Route to store or update the exam timetable
 @router.put("/update-exam-timetable/")
-async def update_exam_timetable(data: ExamTimetable):
+async def update_exam_timetable(data: ExamTimetable,user: dict = Depends(auth.get_current_user)):
     """
     Stores or updates the exam timetable for a specific year and semester.
     """
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     year_collection = db5[data.year]  # Access the collection for the specified year
 
     # Fetch the subjects for the specified section
@@ -235,28 +255,38 @@ async def update_exam_timetable(data: ExamTimetable):
 
 
 @router.get('/get-student-attendance')
-async def get_student_attendance(student_id: str, year: str):
+async def get_student_attendance(student_id: str, year: str,user: dict = Depends(auth.get_current_user)):
     """
     Get the attendance details of a student for a specific year.
     """
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     # Fetch the student's attendance data for the year
     attendance_data = attendance_collections[year]
     student_attendance = await attendance_data.find_one({"id_number": student_id})
     student_details = await student.find_one({"id_number": student_id})
+    
     if not student_details: 
         raise HTTPException(status_code=404, detail=f"Student {student_id} not found.")
     if not student_attendance:
         raise HTTPException(status_code=404, detail=f"Attendance data not found for student {student_id} in year {year}.")
     for field in ['_id', 'password', 'semester','is_admin']:
         student_details.pop(field, None)
-    return {'student_details':student_details,'attendance':student_attendance['attendance_report']}
+    subjects_report = calculate_percentage(student_attendance)
+    subjects_report.pop('total_percentage',None)
+    for key,value in subjects_report.items():
+        value.pop('faculty_name',None)
+    return {'status_code':200,'student_details':student_details,'attendance':student_attendance['attendance_report'],'subjects_report':subjects_report}
 
 @router.post("/update-timetable-for-faculty/")
-async def update_timetable_for_faculty(assignments: YearAssignment):
+async def update_timetable_for_faculty(assignments: YearAssignment,user: dict = Depends(auth.get_current_user)):
     """
     Incrementally update the timetable and faculty data for the given year.
     Dynamically add new subjects if they do not exist in the timetable.
     """
+    
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     year = assignments.year
     timetable_collection = db3[year]  # Access the year-specific timetable collection
     faculty_collection = db["Faculty"]  # Faculty collection
@@ -368,12 +398,15 @@ async def update_timetable_for_faculty(assignments: YearAssignment):
 #         return 0.0
 #     return round((part / whole) * 100, 2)
 @router.post("/Today_classes")
-async def admin_Today_classes(data: TodayClassesRequest):
+async def admin_Today_classes(data: TodayClassesRequest,user: dict = Depends(auth.get_current_user)):
     """
     Admin dashboard to view timetable and attendance for all years and sections.
     The `date` parameter is in YYYY-MM-DD format.
     """
     # Validate date
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
+        
     date = data.today_date
     try:
         query_date_obj = datetime.strptime(date, "%Y-%m-%d")
@@ -426,7 +459,9 @@ async def admin_Today_classes(data: TodayClassesRequest):
     return overall_response
 
 @router.post('/class-attendance')
-async def class_attendance(data:ClassAttendanceRequest):
+async def class_attendance(data:ClassAttendanceRequest,user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     year = data.year
     section = data.section
     date = data.date
@@ -463,7 +498,9 @@ async def class_attendance(data:ClassAttendanceRequest):
                     
                 
 @router.get('/dashboard')
-async def admin_dashboard():
+async def admin_dashboard(user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     #all years percentage
     years = ['E1']
     overall_response = {}
@@ -502,8 +539,10 @@ async def create_student(student_data: Student = Depends(Student)):
         return {'message':'False'}
    
 @router.post("/create-faculty", response_model=Faculty)
-async def create_faculty(faculty_data: Faculty = Depends(Faculty)):
+async def create_faculty(faculty_data: Faculty = Depends(Faculty),user: dict = Depends(auth.get_current_user)):
     # Check if the faculty already exists (optional)
+    if user['role']!='admin':
+        return {'status_code':500,'message':'you cannot access this page'}
     existing_faculty = await faculty.find_one({"email_address": faculty_data.email_address})
     if existing_faculty:
         raise HTTPException(status_code=400, detail="Faculty member with this email already exists.")
@@ -533,7 +572,9 @@ def convert_objectid_to_str(documents):
     return documents
 
 @router.get('/get-faculty-emails')
-async def get_all_users():
+async def get_all_users(user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     faculty_data = await database.faculty.find({}).to_list(None)
     if faculty_data:
         response = []
@@ -547,7 +588,9 @@ async def get_all_users():
 
 # Delete User (Faculty or Student)
 @router.delete('/delete-user')
-async def delete_user(user_type: str, identifier: str):
+async def delete_user(user_type: str, identifier: str,user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin':
+        return {'status_code':500,'message':'you cannot access this page'}
     if user_type == "faculty":
         res = await faculty.delete_one(
             {'email_address': identifier})  # Assuming email_address is used to identify faculty
@@ -560,7 +603,9 @@ async def delete_user(user_type: str, identifier: str):
     raise HTTPException(status_code=404, detail="User  not found or invalid user type")
 
 @router.put('/update-faculty')
-async def update_faculty(email: str,faculty_data: Faculty = Depends(Faculty)):
+async def update_faculty(email: str,faculty_data: Faculty = Depends(Faculty),user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin':
+        return {'status_code':500,'message':'you cannot access this page'}
     existing_faculty = await faculty.find_one({'email_address': email})
     if not existing_faculty:
         raise HTTPException(status_code=404, detail="Faculty not found")
@@ -576,7 +621,9 @@ async def update_faculty(email: str,faculty_data: Faculty = Depends(Faculty)):
  
  
 @router.put('/update-student')
-async def update_student(student_id: str,student_data: Student = Depends(Student)):   
+async def update_student(student_id: str,student_data: Student = Depends(Student),user: dict = Depends(auth.get_current_user)):   
+    if user['role']!='admin':
+        return {'status_code':500,'message':'you cannot access this page'}
     # Update logic for student
     existing_student = await student.find_one({'id_number': student_id})
     if not existing_student:
@@ -591,7 +638,9 @@ async def update_student(student_id: str,student_data: Student = Depends(Student
     return {"message": "Student updated successfully"} if res.modified_count else {"message": "No changes made"}
 
 @router.get('/download-attendance')
-async def get_attendance_summary():
+async def get_attendance_summary(user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     workbook = Workbook()
     E1 = workbook.active
     await create_sub_sheet(E1,"E1")
@@ -784,7 +833,9 @@ def create_section(sheet, col_start, section_name, subheaders):
 
 
 @router.delete('/delete-attendance')
-async def delete_attendance():
+async def delete_attendance(user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     years = ['E1','E2','E3','E4']
     await database.student.update_many({}, {'$set': { 'overall_attendance': 0}})
     data = dict()
@@ -798,8 +849,10 @@ async def delete_attendance():
         raise HTTPException(status_code = 500,detail=f"error while deleting the attendance collection : {str(e)}")
 
 @router.get("/timetable/{year}")
-async def get_timetable(year: str):
+async def get_timetable(year: str,user: dict = Depends(auth.get_current_user)):
     """Fetch the timetable for a given academic year."""
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     prefix = timetable_collections.get(year)
 
     timetable = await prefix.find_one({})
@@ -813,7 +866,9 @@ async def get_timetable(year: str):
     
 
 @router.post("/timetable")
-async def modify_timetable(request: TimeTableRequest):
+async def modify_timetable(request: TimeTableRequest,user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     year  = request.year
     prefix = timetable_collections[year]
     await prefix.delete_many({})
@@ -825,7 +880,9 @@ async def modify_timetable(request: TimeTableRequest):
     
 
 @router.get('/visualize-attendance')
-async def visualize_attendance():
+async def visualize_attendance(user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     try:
         years = ['E1']
         sections = ['A', 'B', 'C', 'D', 'E']
@@ -872,18 +929,22 @@ async def visualize_attendance():
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
     
 @router.get('/get-subjects')
-async def get_subjects():
+async def get_subjects(user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     subjects = {}
     years = ['E1','E2','E3','E4']
     for year in years:
-        subjects_data = await subjects_collections[year].find_one({'sem':'sem-1'})
+        subjects_data = await subjects_collections[year].find_one({'sem':'sem-2'})
         if not subjects_data:
             return {'status_code':404,'message':'subjects reocrds not found'}
         subjects[year] = subjects_data['subjects']
     
     return subjects
 @router.get('/get-faculty')
-async def get_faculty():
+async def get_faculty(user: dict = Depends(auth.get_current_user)):
+    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+        return {'status_code':500,'message':'you cannot access this page'}
     try:
         response = []
         years = ['E1']

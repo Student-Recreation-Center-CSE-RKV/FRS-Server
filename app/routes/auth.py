@@ -102,7 +102,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         print(payload)
         email = payload.get("sub")
         role = payload.get("role")
-        print(email)
         if not email or not role:
             raise HTTPException(status_code=401, detail="Invalid token payload")
 

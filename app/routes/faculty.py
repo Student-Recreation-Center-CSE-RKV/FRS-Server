@@ -26,7 +26,7 @@ student_data=database.student
 faculty_collection=database.faculty
 @router.get("/dashboard/")
 async def faculty_dashboard(date: str,user: dict = Depends(auth.get_current_user)):    
-  """
+    """
     Displays all the classes available for a faculty on a specific date.
     If the attendance for a class is not recorded (e.g., future dates), it shows 'N/A' for attendance.
     """
@@ -54,7 +54,8 @@ async def faculty_dashboard(date: str,user: dict = Depends(auth.get_current_user
         if assignments:
             for subject, data in assignments['subjects'].items():
                 for record in data:
-                    if record['faculty_username'] == email_address:
+                    print(record)
+                    if record.get('faculty_username') == email_address:
                         subjects.append({"subject_name": subject, "year":year,"sections": record["sec"]})
     if not faculty:
         raise HTTPException(status_code=404, detail="Faculty not found")

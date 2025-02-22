@@ -1,193 +1,136 @@
-# from fastapi import APIRouter
-# # from fastapi.middleware.cors import CORSMiddleware
-# # from typing import List, Dict, Optional
-# from pydantic import BaseModel, Field
-# import numpy as np
-# import cv2
-# import faiss
-# import tensorflow as tf
-# import cv2
-# # import torch
-# import base64
-# import cv2
-# from ultralytics import YOLO
-# from keras_facenet import FaceNet
-# # from .exception_handler import ExceptionHandler
-# # import os
-# # import pandas as pd
-# # from pymongo import MongoClient
-# # from bson.json_util import dumps
-# # import json
-# # from models.StudentModel import CapturedImages 
-# # from db.database import student
+import numpy as np
+import cv2
+import torch
+import tensorflow as tf
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect,APIRouter
+from pydantic import BaseModel
+import asyncio
+from typing import List
+from bson import ObjectId
+from ultralytics import YOLO
+import faiss
+import pymongo
+from pymongo import MongoClient
+from db import database
+from ultralytics import YOLO
+# Initialize FastAPI app
+router = APIRouter()
 
-# router = APIRouter()
-# # 
-# # BASE_DIR = os.path.dirname(os.path.abspath(__file__))   
-# # cropper = YOLO(os.path.join(BASE_DIR, 'locals', 'yolo.pt'))
-# # embedder = FaceNet()
-# # embeddings_list = []
-# # count = 0
+# Database connection
+students_collection = database.student # Replace with your collection name
 
+# Load YOLOv8 face detector
+yolo_model = YOLO(r"C:\Users\sathe\OneDrive\Documents\FRS-Server\app\routes\model\locals\yolo.pt")  # Replace with the path to your YOLOv8 model
 
- 
-# # @ExceptionHandler
-# # def crop_faces(img):
-# #     def return_crop_face(img, cropper):
-# #         results = cropper.predict(img)
-# #         result = results[0]
-# #         if len(result.boxes) == 0:
-# #             print("No face detected")
-# #             return {'message':'No face detected' , 'status':0}  
-# #         box = result.boxes
-# #         confidence = box.conf[0]
-# #         if confidence < 0.85:  
-# #             print("Low confidence detection")
-# #             return {'message':'No face detected' , 'status':1}
-# #         x1, y1, x2, y2 = box.xyxy[0]
-# #         x1, y1, x2, y2 = round(x1.item()), round(y1.item()), round(x2.item()), round(y2.item())
-# #         h, w, ch = img.shape
-# #         x1, y1 = max(0, x1), max(0, y1)
-# #         x2, y2 = min(w, x2), min(h, y2)
-# #         face = img[y1:y2, x1:x2]
-# #         if face is not None: 
-# #             face = cv2.cvtColor(face, cv2.COLOR_RGB2BGR)
-# #         else:
-# #             pass
+# Load FaceNet model (adjust the path to your model)
+# facenet_model = tf.saved_model.load('path_to_facenet_model')  # Change path as needed
 
-# #         return face
+# Indexing and searching face embeddings using FAISS
+index = faiss.IndexFlatL2(128)  # Using FAISS for fast similarity search
+stored_embeddings = []
+stored_ids = []
 
-# # @ExceptionHandler
-# # def get_embeddings(face , embedder):
-# #     face = face.astype('float32')
-# #     face = np.expand_dims(face,axis=0)
-# #     return embedder.embeddings(face)
+# Function to detect faces using YOLOv8
+def detect_faces_yolov8(image: np.ndarray):
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = yolo_model(image_rgb)
+    boxes = []
+    for result in results.xywh[0]:
+        x_center, y_center, w, h, confidence, class_id = result
+        if class_id == 0 and confidence > 0.5:
+            x1 = int(x_center - w / 2)
+            y1 = int(y_center - h / 2)
+            boxes.append([x1, y1, int(w), int(h)])
+    return boxes
 
+# Function to extract embeddings using FaceNet
+def get_face_embedding(image: np.ndarray) -> np.ndarray:
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (160, 160))
+    image = np.expand_dims(image, axis=0)
+    embedding = facenet_model(image)
+    return embedding.numpy().flatten()
 
+# Fetch students from the database based on year and section
+def get_students_by_year_and_section(year: str, branch:str, section: str):
+    return list(students_collection.find({"year": year, "branch":branch, "section": section}))
 
-# # @router.post("/verify-batch")
-# # async def verify_batch(data: CapturedImages):
-# #     global embeddings_list
-# #     global count
-# #     low_confidence_count = 0
-# #     no_face_count = 0
+# Function to save student embeddings into the FAISS index
+def save_student_embeddings(students):
+    for student in students:
+        embedding = student['embedding']
+        student_id = student['id_number']
+        stored_embeddings.append(embedding)
+        stored_ids.append(student_id)
+    index.add(np.array(stored_embeddings))  # Add embeddings to FAISS index
 
-# #     images_length = len(data.images)
-# #     for image in data.images:
-# #         image_data = base64.b64decode(image.split(",")[1])
-# #         np_arr = np.frombuffer(image_data, np.uint8)
-# #         img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-# #         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-# #         face = crop_faces(img)
-# #         if isinstance(face,dict):
-# #             if face.status == 0:
-# #                 no_face_count = no_face_count + 1
-# #             else:
-# #                 low_confidence_count = low_confidence_count + 1
-# #         else:
-# #             embedding = get_embeddings(face, embedder)
-# #             embeddings_list.append(embedding)
-# #             count = count + 1
-# #             print(f"embedding {count} taken")
-# #     embeddings = [embed.tolist() for embed in embeddings_list]
-# #     document = {
-# #         "name" : data.form_data['formData']['name'],
-# #         "id" : data.form_data['formData']['studentId'],
-# #         "batch" : data.form_data['formData']['batch'],
-# #         "branch" : data.form_data['formData']['branch'],
-# #         "section" : data.form_data['formData']['section'],
-# #         "embeddings" : embeddings
-# #     }
-# #     filter_query = {"id": data.form_data['formData']['studentId']}
-# #     result = student.replace_one(filter_query,document,upsert=True)
-# #     embeddings_list.clear()
-# #     if result.matched_count:
-# #         print("Data uploaded to mongodb")
-# #         if(count == images_length):
-# #             count=0
-# #             return {'status':200,'message':'your face embeddings are taken sucessfully taken'}
-# #         else:
-# #             count=0
-# #             return {'status':207 ,'message':f'{count} only sucessfully taken. Resend {images_length - count} images'}
-# #     else:
-# #         count=0
-# #         return {'status':400 , 'message':'Error in inserting the data into the database'}
+# WebSocket model
+class FrameData(BaseModel):
+    frame: str
+    faculty_id: str
+    year: str
+    Branch: str
+    section: str
 
+# WebSocket endpoint for handling real-time attendance
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            frame_data = FrameData.parse_raw(data)
+            frame = frame_data.frame
+            faculty_id = frame_data.faculty_id
+            year = frame_data.year
+            branch = frame_data.branch
+            section = frame_data.section
 
-# # import numpy as np
-# # import faiss
-# # import tensorflow as tf
-# # import cv2
-# # import torch
-# # from fastapi import FastAPI, File, UploadFile
-# # from typing import List
+            # Fetch students based on the year and section from MongoDB
+            students = get_students_by_year_and_section(year, branch, section)
 
-# # # Initialize FastAPI app
-# # app = FastAPI()
+            # Save embeddings to FAISS if it's the first time
+            if not stored_embeddings:
+                save_student_embeddings(students)
 
-# # # Load YOLOv8 face detector
-# # from ultralytics import YOLO
+            # Decode frame from base64 and process it
+            nparr = np.frombuffer(frame.encode(), np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-# yolo_model = YOLO(r"C:\Users\sathe\OneDrive\Documents\FRS-Server\app\routes\model\locals\yolo.pt")
-# facenet_model = FaceNet()  
-# stored_embeddings = np.random.random((10, 128))  
-# stored_ids = np.arange(10)  
+            # Detect faces in the image using YOLOv8
+            faces = detect_faces_yolov8(img)
 
-# index = faiss.IndexFlatL2(128)
-# index.add(stored_embeddings)
+            # List to store recognized students
+            recognized_students = []
 
-# def detect_faces_yolov8(image: np.ndarray):
-#     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            for (x, y, w, h) in faces:
+                face_image = img[y:y + h, x:x + w]
+                query_embedding = get_face_embedding(face_image)
 
-#     results = yolo_model(image_rgb)
+                # Search the FAISS index for similar embeddings
+                D, I = index.search(np.array([query_embedding]), k=5)
+                matched_ids = [stored_ids[i] for i in I[0]]
 
-#     boxes = []
-#     for result in results.xywh[0]:
-#         x_center, y_center, w, h, confidence, class_id = result
-#         if class_id == 0 and confidence > 0.5:  
-#             x1 = int(x_center - w / 2)
-#             y1 = int(y_center - h / 2)
-#             boxes.append([x1, y1, int(w), int(h)])
-    
-#     return boxes
+                # If match is found, consider the student recognized
+                for student_id in matched_ids:
+                    student = students_collection.find_one({"id_number": student_id})
+                    if student:
+                        recognized_students.append({
+                            "id_number": student['id_number'],
+                            "name": f"{student['first_name']} {student['last_name']}",
+                            "year": student['year'],
+                            "branch":student['branch'],
+                            "section": student['section']
+                        })
 
-# def get_face_embedding(image: np.ndarray) -> np.ndarray:
-#     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-#     image = cv2.resize(image, (160, 160))
-#     image = np.expand_dims(image, axis=0)
-#     embedding = facenet_model(image)
-#     return embedding.numpy().flatten()
-# class Image(BaseModel):
-#     image:str
-# @router.post("/compare_faces")
-# async def compare_faces(data:Image):
-    
-#     # return {'message':'sucess'}
-#     # Read image from the uploaded file
-#     image_bytes = await data.read()
-#     image = np.array(cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR))
+            # Send recognized students to the frontend
+            await websocket.send_text(
+                {"students": recognized_students}
+            )
 
-#     # Detect faces in the image using YOLOv8
-#     faces = detect_faces_yolov8(image)
+    except WebSocketDisconnect:
+        print("Client disconnected")
+        await websocket.close()
 
-#     # List to store the results for all detected faces
-#     result_ids = []
-
-#     # Process each detected face
-#     for (x, y, w, h) in faces:
-#         # Crop the face region from the image
-#         face_image = image[y:y+h, x:x+w]
-
-#         # Get embedding for the cropped face
-#         query_embedding = get_face_embedding(face_image)
-
-#         # Perform similarity search in FAISS
-#         D, I = index.search(np.array([query_embedding]), k=5)  # Search top 5 results
-
-#         # Append the IDs of the most similar faces
-#         result_ids.append(stored_ids[I[0]].tolist())
-
-#     return result_ids
-
-# # Run the FastAPI app using Uvicorn (use this command to start the app)
-# # Command: uvicorn <script_name>:app --reload
+# Run FastAPI with Uvicorn
+# Command to run: uvicorn script_name:app --reload

@@ -80,7 +80,7 @@ async def update_years_and_sem(request: str,user: dict = Depends(auth.get_curren
     Args:
         request: A string indicating whether to update "year" or "sem".
     """
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email_address'])):
         return {'status_code':500,'message':'you cannot access this page'}
     if request not in ["year", "sem"]:
         raise HTTPException(status_code=400, detail="Invalid request. Must be 'year' or 'sem'.")
@@ -204,7 +204,7 @@ async def update_exam_timetable(data: ExamTimetable,user: dict = Depends(auth.ge
     """
     Stores or updates the exam timetable for a specific year and semester.
     """
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email_address'])):
         return {'status_code':500,'message':'you cannot access this page'}
     year_collection = db5[data.year]  # Access the collection for the specified year
 
@@ -259,7 +259,7 @@ async def get_student_attendance(student_id: str, year: str,user: dict = Depends
     """
     Get the attendance details of a student for a specific year.
     """
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email'])):
         return {'status_code':500,'message':'you cannot access this page'}
     # Fetch the student's attendance data for the year
     attendance_data = attendance_collections[year]
@@ -285,7 +285,7 @@ async def update_timetable_for_faculty(assignments: YearAssignment,user: dict = 
     Dynamically add new subjects if they do not exist in the timetable.
     """
     
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email_address'])):
         return {'status_code':500,'message':'you cannot access this page'}
     year = assignments.year
     timetable_collection = db3[year]  # Access the year-specific timetable collection
@@ -404,7 +404,7 @@ async def admin_Today_classes(data: TodayClassesRequest,user: dict = Depends(aut
     The `date` parameter is in YYYY-MM-DD format.
     """
     # Validate date
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email'])):
         return {'status_code':500,'message':'you cannot access this page'}
         
     date = data.today_date
@@ -460,7 +460,7 @@ async def admin_Today_classes(data: TodayClassesRequest,user: dict = Depends(aut
 
 @router.post('/class-attendance')
 async def class_attendance(data:ClassAttendanceRequest,user: dict = Depends(auth.get_current_user)):
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email'])):
         return {'status_code':500,'message':'you cannot access this page'}
     year = data.year
     section = data.section
@@ -498,8 +498,8 @@ async def class_attendance(data:ClassAttendanceRequest,user: dict = Depends(auth
                     
                 
 @router.get('/dashboard')
-async def admin_dashboard(user: dict = Depends(auth.get_current_user)):
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+async def admin_dashboard(user: dict = Depends(auth.get_current_user)):      
+    if user['role']!='admin' or (not check_admin_email(user['email'])):
         return {'status_code':500,'message':'you cannot access this page'}
     #all years percentage
     years = ['E1']
@@ -573,7 +573,7 @@ def convert_objectid_to_str(documents):
 
 @router.get('/get-faculty-emails')
 async def get_all_users(user: dict = Depends(auth.get_current_user)):
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email_address'])):
         return {'status_code':500,'message':'you cannot access this page'}
     faculty_data = await database.faculty.find({}).to_list(None)
     if faculty_data:
@@ -639,7 +639,7 @@ async def update_student(student_id: str,student_data: Student = Depends(Student
 
 @router.get('/download-attendance')
 async def get_attendance_summary(user: dict = Depends(auth.get_current_user)):
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email_address'])):
         return {'status_code':500,'message':'you cannot access this page'}
     workbook = Workbook()
     E1 = workbook.active
@@ -834,7 +834,7 @@ def create_section(sheet, col_start, section_name, subheaders):
 
 @router.delete('/delete-attendance')
 async def delete_attendance(user: dict = Depends(auth.get_current_user)):
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email_address'])):
         return {'status_code':500,'message':'you cannot access this page'}
     years = ['E1','E2','E3','E4']
     await database.student.update_many({}, {'$set': { 'overall_attendance': 0}})
@@ -849,10 +849,8 @@ async def delete_attendance(user: dict = Depends(auth.get_current_user)):
         raise HTTPException(status_code = 500,detail=f"error while deleting the attendance collection : {str(e)}")
 
 @router.get("/timetable/{year}")
-async def get_timetable(year: str,user: dict = Depends(auth.get_current_user)):
+async def get_timetable(year: str):
     """Fetch the timetable for a given academic year."""
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
-        return {'status_code':500,'message':'you cannot access this page'}
     prefix = timetable_collections.get(year)
 
     timetable = await prefix.find_one({})
@@ -867,7 +865,7 @@ async def get_timetable(year: str,user: dict = Depends(auth.get_current_user)):
 
 @router.post("/timetable")
 async def modify_timetable(request: TimeTableRequest,user: dict = Depends(auth.get_current_user)):
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email'])):
         return {'status_code':500,'message':'you cannot access this page'}
     year  = request.year
     prefix = timetable_collections[year]
@@ -881,7 +879,7 @@ async def modify_timetable(request: TimeTableRequest,user: dict = Depends(auth.g
 
 @router.get('/visualize-attendance')
 async def visualize_attendance(user: dict = Depends(auth.get_current_user)):
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email'])):
         return {'status_code':500,'message':'you cannot access this page'}
     try:
         years = ['E1']
@@ -930,7 +928,7 @@ async def visualize_attendance(user: dict = Depends(auth.get_current_user)):
     
 @router.get('/get-subjects')
 async def get_subjects(user: dict = Depends(auth.get_current_user)):
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email'])):
         return {'status_code':500,'message':'you cannot access this page'}
     subjects = {}
     years = ['E1','E2','E3','E4']
@@ -943,7 +941,7 @@ async def get_subjects(user: dict = Depends(auth.get_current_user)):
     return subjects
 @router.get('/get-faculty')
 async def get_faculty(user: dict = Depends(auth.get_current_user)):
-    if user['role']!='admin' and (not check_admin_email(user['email_address'])):
+    if user['role']!='admin' or (not check_admin_email(user['email'])):
         return {'status_code':500,'message':'you cannot access this page'}
     try:
         response = []

@@ -20,7 +20,7 @@ router = APIRouter()
 students_collection = database.student # Replace with your collection name
 
 # Load YOLOv8 face detector
-yolo_model = YOLO(r"C:\Users\sathe\OneDrive\Documents\FRS-Server\app\routes\model\locals\yolo.pt")  # Replace with the path to your YOLOv8 model
+yolo_model = YOLO("C:\\Users\\janar\\OneDrive\\Documents\\AI\\Projects\\FRS\\crash\\FRS-Server\\app\\routes\\model\\locals\\yolo.pt")
 
 # Load FaceNet model (adjust the path to your model)
 # facenet_model = tf.saved_model.load('path_to_facenet_model')  # Change path as needed

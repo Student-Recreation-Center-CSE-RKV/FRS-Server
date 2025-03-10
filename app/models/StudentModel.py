@@ -102,3 +102,7 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
     confirm_password :str
+
+class CapturedImages(BaseModel):
+    id_number : str
+    images : list[str]

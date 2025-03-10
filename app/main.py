@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from routes import auth, admin, student, faculty,user
-from routes.model import get_embd
+from routes.model import get_embd,training
 from models.AdminModel import LoginCredentials
 from db import database
 from routes.auth import verify_password,generate_access_token,get_current_user
@@ -81,11 +81,11 @@ app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(student.router, prefix="/student", tags=["Student"])
 app.include_router(faculty.router, prefix="/faculty", tags=["Faculty"])
 app.include_router(user.router,prefix='/user',tags=["User"])
-app.include_router(get_embd.router,prefix='/capturing-images' , tags=['capturing-images'])
-#app.include_router(get_embd.router,prefix='/capturing-images' , tags=['capturing-images'])
+app.include_router(get_embd.router,prefix='/predict' , tags=['predict'])
+app.include_router(trainingg.router,prefix='/capturing' , tags=['capturing'])
 
 
-# Mount static files for serving HTML
+# Mount static files for serving HTML 
 app.mount("/static", StaticFiles(directory="templates"), name="static")
 
 @app.get("/", tags=["Root"])

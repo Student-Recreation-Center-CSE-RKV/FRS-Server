@@ -521,10 +521,10 @@ async def admin_dashboard(user: dict = Depends(auth.get_current_user)):
     overall_response['E4'] = 60
     return overall_response
 # Create User (Faculty or Student)
-@router.post("/create-student", response_model=Student)
+@router.post("/create-student")
 async def create_student(student_data: Student = Depends(Student)):
     # Check if the student already exists (optional)
-    existing_student = await student.find_one({"id_number": student_data.student_id})
+    existing_student = await student.find_one({"id_number": student_data.id_number})
     if existing_student:
         raise HTTPException(status_code=400, detail="Student with this ID already exists.")
     # Insert the new student into the database
@@ -532,7 +532,7 @@ async def create_student(student_data: Student = Depends(Student)):
     hash_pass = auth.get_password_hash(student_data['password'])
     student_data['password'] = hash_pass
     # print(data)
-    res = await student.insert_one(student_data)
+    res = await student.insert_one(student_data) 
     if res.inserted_id and res.acknowledged:
         return {'message':'True'}
     else:

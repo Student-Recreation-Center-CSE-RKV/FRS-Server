@@ -12,7 +12,7 @@ from sympy import sec
 from models.AdminModel import ExamTimetable,UpdateCRRequest,YearAssignment,TodayClassesRequest,ClassAttendanceRequest
 from numpy import number
 from models.FacultyModel import Attendance, Faculty
-from models.StudentModel import Branch, Student
+from models.StudentModel import Branch, Student, studentDetails
 from pydantic import BaseModel
 from .faculty import calculate_percentage
 from db import database
@@ -537,6 +537,24 @@ async def create_student(student_data: Student = Depends(Student)):
         return {'message':'True'}
     else:
         return {'message':'False'}
+    
+@router.post('/student-details')
+async def student_details(details: studentDetails):
+    stu_id = details.id_number
+    result = await student.find_one({'id_number': stu_id})
+
+    if result:
+        full_name = f"{result.get('first_name', '')} {result.get('last_name', '')}".strip()
+        return {
+            "name": full_name,
+            "branch": result.get("branch", ""),
+            "section": result.get("section", ""),
+            "year" : result.get("year",""),
+            "gender": result.get("gender", ""),
+            "phone_number": result.get("phone_number", "")
+        }
+    else:
+        return {"error": "Student ID not found"}
    
 @router.post("/create-faculty", response_model=Faculty)
 async def create_faculty(faculty_data: Faculty = Depends(Faculty),user: dict = Depends(auth.get_current_user)):

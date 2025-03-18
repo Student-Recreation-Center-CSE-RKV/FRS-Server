@@ -25,221 +25,165 @@ today_date = str(date.today())
 student_data=database.student
 faculty_collection=database.faculty
 @router.get("/dashboard/")
-async def faculty_dashboard(date: str,user: dict = Depends(auth.get_current_user)):    
+async def faculty_dashboard(date: str, user: dict = Depends(auth.get_current_user)):    
     """
-    Displays all the classes available for a faculty on a specific date.
-    If the attendance for a class is not recorded (e.g., future dates), it shows 'N/A' for attendance.
+    Optimized version: 
+    - Fetches student and attendance records in bulk.
+    - Reduces MongoDB queries for better performance.
     """
     email_address = user["email"]
 
     try:
-        # Convert the date string into a datetime object
         date_obj = datetime.strptime(date, "%Y-%m-%d")
-        # Get the day of the week (e.g., Monday, Tuesday)
         day = date_obj.strftime("%A").lower()
-
-        # Check if the date is in the future
-        current_date = datetime.now()
-        is_future_date = date_obj > current_date
+        is_future_date = date_obj > datetime.now()
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    # Step 1: Fetch faculty details using email address
-   
+    # 🔹 Fetch faculty details
     faculty = await faculty_collection.find_one({"email_address": email_address})
-    years = ['E1']
-    subjects = []
-    for year in years:
-        assignments = await timetable_collections[year].find_one({'type':'assignments'})
-        if assignments:
-            for subject, data in assignments['subjects'].items():
-                for record in data:
-                    print(record)
-                    if record.get('faculty_username') == email_address:
-                        subjects.append({"subject_name": subject, "year":year,"sections": record["sec"]})
     if not faculty:
         raise HTTPException(status_code=404, detail="Faculty not found")
 
-      # List of subjects with year and sections
+    years = ["E3"]
+    subjects = []
+
+    # 🔹 Fetch all subjects assigned to the faculty
+    for year in years:
+        assignments = await timetable_collections[year].find_one({"type": "assignments"})
+        if assignments:
+            for subject, data in assignments["subjects"].items():
+                for record in data:
+                    if record.get("faculty_username") == email_address:
+                        subjects.append({"subject_name": subject, "year": year, "sections": record["sec"]})
+
     if not subjects:
         return {"message": "No subjects assigned to this faculty."}
 
-    # Step 2: Fetch timetable for the selected day for all assigned years/sections
+    # 🔹 Fetch timetable data in one query per year
     day_wise_schedule = []
     for subject in subjects:
-        subject_name = subject["subject_name"]
-        year = subject["year"]
-        sections = subject["sections"]
+        year, subject_name, sections = subject["year"], subject["subject_name"], subject["sections"]
+        timetable = await timetable_collections[year].find_one({}, {"_id": 0})
 
-         # Dynamically select the timetable collection for the given year
-        timetable_collection = timetable_collections[year]
-        # if not timetable_collection:
-        #     raise HTTPException(status_code=404, detail=f"No timetable collection for year: {year}")
+        if not timetable or day not in timetable:
+            continue  # Skip if no timetable for this year or day
 
-        # Fetch the timetable for the specific year
-        timetable = await timetable_collection.find_one({})
-        if not timetable:
-            raise HTTPException(status_code=404, detail=f"Timetable not found for year: {year}")
-
-        # Check if the day exists in the document
-        if day not in timetable:
-            raise HTTPException(status_code=404, detail=f"No timetable found for day: {day}")
-
-        # Extract the day's schedule
-        day_schedule = timetable[day]  
-            # Filter the timetable to include only the relevant subject and sections
         for section in sections:
-            section_schedule = day_schedule.get(section, {})
-            for subject_key, periods in section_schedule.items():
-                if subject_key == subject_name:
-                    # for period in periods:
-                        day_wise_schedule.append({
-                            "year": year,
-                            "section": section,
-                            "subject": subject_name,
-                            "periods": periods,
-                            
-                        })
+            section_schedule = timetable[day].get(section, {})
+            if subject_name in section_schedule:
+                day_wise_schedule.append({
+                    "year": year, "section": section, "subject": subject_name, "periods": section_schedule[subject_name]
+                })
+
     if not day_wise_schedule:
         return {"message": f"No classes scheduled for {day.capitalize()} for this faculty."}
 
-    # Step 3: Fetch attendance for completed classes or set to 'N/A' for future dates
+    # 🔹 Fetch student data in one query
+    student_query = {"year": {"$in": years}, "section": {"$in": [s["sections"] for s in subjects]}}
+    students = await student_data.find(student_query, {"_id": 0, "id_number": 1, "year": 1, "section": 1}).to_list(length=None)
+
+    # 🔹 Organize students by year-section
+    student_dict = {}
+    for student in students:
+        key = (student["year"], student["section"])
+        if key not in student_dict:
+            student_dict[key] = []
+        student_dict[key].append(student["id_number"])
+
+    # 🔹 Fetch attendance records in one query
+    attendance_query = {"id_number": {"$in": [s["id_number"] for s in students]}}
+    attendance_records = await attendance_collections["E3"].find(attendance_query).to_list(length=None)
+
+    # 🔹 Convert attendance records to a dictionary for quick lookup
+    attendance_data = {record["id_number"]: record.get("attendance_report", {}) for record in attendance_records}
+
+    # 🔹 Prepare final attendance details
     attendance_details = []
     for schedule in day_wise_schedule:
-        year = schedule["year"]
-        section = schedule["section"]
-        subject_name = schedule["subject"]
-        periods = schedule["periods"]
-
-        # Dynamically select the attendance collection for the given year
-        attendance_collection = attendance_collections.get(year)
-        # if not attendance_collection:
-        #     raise HTTPException(status_code=404, detail=f"No attendance collection for year: {year}")
+        year, section, subject_name, periods = schedule.values()
+        student_ids = student_dict.get((year, section), [])
 
         if is_future_date:
-            # For future dates, attendance is 'N/A'
             attendance_details.append({
-                "year": year,
-                "section": section,
-                "subject": subject_name,
-                "periods": periods,
-                "no of classes":"N/A",
-                "present_ids": "N/A",
-                "absent_ids": "N/A"
+                "year": year, "section": section, "subject": subject_name, "periods": periods,
+                "no of classes": "N/A", "present_ids": "N/A", "absent_ids": "N/A"
             })
             continue
 
-        # Fetch students for the section
-        students_to_check = await student_data.find(
-            {"year": year, "section": section}
-        ).to_list(length=None)
+        present_ids, absent_ids = [], []
+        no_of_classes = 0
 
-        if not students_to_check:
-            attendance_details.append({
-                "year": year,
-                "section": section,
-                "subject": subject_name,
-                "periods": periods,
-                "no of classes":"N/A",
-                "present_ids": "N/A",
-                "absent_ids": "N/A"
-            })
-            continue
-
-        # Initialize attendance lists for the subject
-        present_ids = []
-        absent_ids = []
-        no_of_classes=0
-        for student in students_to_check:
-            student_id = student["id_number"]
-
-            # Fetch the student's attendance record
-            attendance_record = await attendance_collection.find_one({"id_number": student_id})
-            if not attendance_record:
-                continue
-
-            # Get the attendance report
-            attendance_report = attendance_record.get("attendance_report", {})
-            subject_attendance = attendance_report.get(subject_name, {})
-
+        for student_id in student_ids:
+            subject_attendance = attendance_data.get(student_id, {}).get(subject_name, {})
             if not subject_attendance:
                 continue
 
-            # Check attendance for the specific date
-            attendance_records = subject_attendance.get("attendance", [])
-            for record in attendance_records:
+            for record in subject_attendance.get("attendance", []):
                 if record["date"] == date:
                     if record["status"] == "present":
                         present_ids.append(student_id)
                     elif record["status"] == "absent":
                         absent_ids.append(student_id)
-                    no_of_classes=record["number_of_periods"]
-                    break  # Avoid processing the same record again
-           
-        # Append attendance details for the section and subject
+                    no_of_classes = record["number_of_periods"]
+                    break
+
         attendance_details.append({
-            "year": year,
-            "section": section,
-            "subject": subject_name,
-            "periods": periods,
-            "no of classes":no_of_classes if no_of_classes>0 else "N/A",
-            "present_ids": present_ids if present_ids else "N/A",
-            "absent_ids": absent_ids if absent_ids else "N/A"
+            "year": year, "section": section, "subject": subject_name, "periods": periods,
+            "no of classes": no_of_classes if no_of_classes > 0 else "N/A",
+            "present_ids": present_ids or "N/A", "absent_ids": absent_ids or "N/A"
         })
 
-    # Final validation to ensure consistent results
-    if not attendance_details:
-        return {"message": f"No attendance records found for the date {date}."}
-
-    # Combine timetable and attendance details
-    result = {
-        "date": date,
-        "day": day.capitalize(),
+    return {
+        "date": date, "day": day.capitalize(),
         "faculty_email": email_address,
-        "schedule": day_wise_schedule,
-        "attendance": attendance_details,
+        "schedule": day_wise_schedule, "attendance": attendance_details
     }
-    return result
 
 
-@router.post("/mark_attendance/")
+
+@router.post("/mark-attendance")
 async def update_attendance(attendance_data: AttendanceUpdate):
+    print("📌 Received attendance update request")
+    
     ids = attendance_data.ids
     subject = attendance_data.subject
     faculty_name = attendance_data.faculty_name
     year = attendance_data.year
-    branch = attendance_data.branch 
+    branch = attendance_data.branch
     section = attendance_data.section
     number_of_periods = attendance_data.number_of_periods
 
+    today_date = datetime.today().strftime('%Y-%m-%d')  # Ensure today_date is defined
+    print(f"📆 Today's date: {today_date}")
+
     collection = attendance_collections[year]
 
+    # Fetch relevant students
     relevant_students = await student_data.find(
         {"year": year, "branch": branch, "section": section}
     ).to_list(length=None)
-    
+
     if not relevant_students:
+        print("⚠️ No students found for the given criteria.")
         raise HTTPException(status_code=404, detail="No students found for the given criteria.")
     
-    # Create a dictionary for quick lookups by id_number
+    print(f"👨‍🎓 Found {len(relevant_students)} students in section {section}")
+
+    # Create a dictionary for quick lookup
     relevant_students_dict = {student["id_number"]: student for student in relevant_students}
 
-    # Process each student ID in the provided list
+    # Process each student ID in the provided list (Marking Present)
     for student_id in ids:
         student = relevant_students_dict.get(student_id)
         if not student:
+            print(f"⚠️ Student ID {student_id} not found in database")
             raise HTTPException(status_code=404, detail=f"Student ID {student_id} not found")
-        
+
         attendance_field = f"attendance_report.{subject}.attendance"
-        # Add or update attendance entry for present students
-        
-        # existing_entry = await collection.find_one({
-        #         "id_number": student["id_number"],
-        #         f"{attendance_field}.date": today_date
-        #     })        
-        # if existing_entry:
-        #     continue
-        # else:
+
+        print(f"✅ Marking Present: {student_id}")
+
         await collection.update_one(
             {"id_number": student_id},
             {
@@ -252,27 +196,28 @@ async def update_attendance(attendance_data: AttendanceUpdate):
             },
             upsert=True
         )
-    # Mark absent for students not in the list of IDs
+
+    # Mark Absent for Students NOT in the List
     for student in relevant_students:
         if student["id_number"] not in ids:
-            # attendance_field = f"attendance.{subject}"
-            # # subject_summary_field = f"subject_summary.{subject}"
+            student_id = student["id_number"]
+            print(f"🚨 Marking Absent: {student_id}")
+
             existing_entry = await collection.find_one({
-                "id_number": student["id_number"],
+                "id_number": student_id,
                 f"{attendance_field}.date": today_date
             })
 
-            # Check if attendance for this date already exists
             if existing_entry:
-                # Update status to absent if entry exists
+                print(f"🔄 Updating existing attendance record to 'absent' for {student_id}")
                 await collection.update_one(
-                    {"id_number": student["id_number"], f"{attendance_field}.date": today_date},
+                    {"id_number": student_id, f"{attendance_field}.date": today_date},
                     {"$set": {f"{attendance_field}.$.status": "absent"}}
                 )
             else:
-                # Add new attendance entry with absent status
+                print(f"🆕 Creating new attendance entry for {student_id}")
                 await collection.update_one(
-                    {"id_number": student["id_number"]},
+                    {"id_number": student_id},
                     {
                         "$set": {f"attendance_report.{subject}.faculty_name": faculty_name},
                         "$push": {attendance_field: {
@@ -283,12 +228,17 @@ async def update_attendance(attendance_data: AttendanceUpdate):
                     },
                     upsert=True
                 )
+
+    # Calculate Attendance Percentage
     for student in relevant_students:
         id_number = student["id_number"]
         attendance_record = await collection.find_one({"id_number": id_number})
 
         if not attendance_record:
+            print(f"⚠️ No attendance record found for {id_number}, skipping calculation")
             continue
+
+        print(f"📊 Calculating attendance for {id_number}")
 
         attendance_report = attendance_record.get("attendance_report", {})
         per_subject_attendance = {}
@@ -302,18 +252,20 @@ async def update_attendance(attendance_data: AttendanceUpdate):
             per_subject_attendance[subject] = attendance_percentage
             subject_attendance_percentages.append(attendance_percentage)
 
-        # Calculate overall attendance as the average of subject attendance percentages
         overall_attendance = (
             sum(subject_attendance_percentages) / len(subject_attendance_percentages)
             if subject_attendance_percentages else 0
         )
 
-        # Update the student's attendance summary
+        print(f"📈 Updating overall attendance for {id_number}: {overall_attendance:.2f}%")
+
         await student_data.update_one(
             {"id_number": id_number},
             {"$set": {"overall_attendance": overall_attendance}},
             upsert=True
         )
+
+    print("✅ Attendance update completed successfully!")
 
     return {
         "message": "Attendance updated successfully",
@@ -322,7 +274,6 @@ async def update_attendance(attendance_data: AttendanceUpdate):
             student["id_number"] for student in relevant_students if student["id_number"] not in ids
         ]
     }
-
 @router.get("/attendance/student/{id_number}")
 async def calculate_student_attendance(id_number: str):
     # Find the student in the database

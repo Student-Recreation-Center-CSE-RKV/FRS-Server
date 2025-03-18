@@ -82,7 +82,7 @@ app.include_router(student.router, prefix="/student", tags=["Student"])
 app.include_router(faculty.router, prefix="/faculty", tags=["Faculty"])
 app.include_router(user.router,prefix='/user',tags=["User"])
 app.include_router(get_embd.router,prefix='/predict' , tags=['predict'])
-app.include_router(trainingg.router,prefix='/capturing' , tags=['capturing'])
+app.include_router(training.router,prefix='/capturing' , tags=['capturing'])
 
 
 # Mount static files for serving HTML 

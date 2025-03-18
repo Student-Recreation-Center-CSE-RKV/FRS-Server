@@ -105,4 +105,8 @@ class ResetPasswordRequest(BaseModel):
 
 class CapturedImages(BaseModel):
     id_number : str
-    images : list[str]
+    images : List[str]
+
+class studentDetails(BaseModel):
+    id_number: str
+

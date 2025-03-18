@@ -10,6 +10,7 @@ from ultralytics import YOLO
 from keras_facenet import FaceNet
 from db.database import student
 from models.StudentModel import CapturedImages
+import base64
 
 router = APIRouter()
 
@@ -53,14 +54,16 @@ async def verify_batch(data: CapturedImages):
     global count
     low_confidence_count = 0
     no_face_count = 0
-    id_number = CapturedImages.id_number
+    id_number = data.id_number
     images_length = len(data.images)
+    
     for image in data.images:
         image_data = base64.b64decode(image.split(",")[1])
         np_arr = np.frombuffer(image_data, np.uint8)
         img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         face = crop_faces(img)
+        
         if isinstance(face, dict):
             if face['status'] == 0:
                 no_face_count += 1
@@ -72,15 +75,23 @@ async def verify_batch(data: CapturedImages):
             count += 1
             print(f"embedding {count} taken")
     
-    # embeddings = [embed.tolist() for embed in embeddings_list]
-    
-    result = student.update_one(
-        {"id_number": id_number},  
-        {"$set": {"embeddings": embeddings_list}} 
-    )
+    # Ensure MongoDB update is awaited
+    print(id_number)
+    print(type(embeddings_list))
+    print(len(embeddings_list))
+    print(type(embeddings_list[0]))
+    embeddings_list = [embedding.tolist() for embedding in embeddings_list]
+    try:
+        result = await student.update_one(
+            {"id_number": id_number},
+            {"$set": {"embeddings": embeddings_list}}
+        )
+    except Exception as e:
+        print(f"MongoDB Error: {e}")
+
     embeddings_list.clear()
     
-    if result.matched_count:
+    if result.matched_count:  # Now `matched_count` is accessible
         print("Data uploaded to MongoDB")
         if count == images_length:
             count = 0

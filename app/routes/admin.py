@@ -3,7 +3,7 @@ from email import message
 from math import e
 from pickle import EXT2
 from re import sub
-from typing import Dict, List, Literal, Union
+from typing import Dict, List, Literal, Union, Optional
 from venv import create
 from fastapi import APIRouter, Body, Depends, HTTPException, Query,Header
 from bson import ObjectId
@@ -999,3 +999,37 @@ async def get_faculty(user: dict = Depends(auth.get_current_user)):
         return {"message": "Success", "faculty_details": response}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
+
+@router.get("/filtered-data", response_model=List[dict])
+async def get_filtered_data(
+    batch: Optional[str] = Query(None),
+    branch: Optional[str] = Query(None),
+    section: Optional[str] = Query(None)
+):
+    # Build the query dynamically based on provided filters
+    query = {}
+
+    if batch:
+        query["id_number"] = {"$regex": f"^{batch}"}  # Match first three characters
+
+    if branch:
+        query["branch"] = branch
+    if section:
+        query["section"] = section
+
+    results = await student.find(query, {"_id": 0}).to_list(None)
+    # Format results and add a tick mark indicator for embeddings
+    print("results",results)
+    formatted_results = [
+        {**result, "embeddings": bool(result.get("embeddings", False))} for result in results
+    ]
+
+    return formatted_results
+
+@router.delete("/delete-student/{id_number}")
+async def delete_student(id_number: str):
+    result = await student.delete_one({"id_number": id_number})  # Match by id_number
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return {"message": "Student deleted successfully"}

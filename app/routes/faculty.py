@@ -24,7 +24,7 @@ timetable_collections={
 today_date = str(date.today()) 
 student_data=database.student
 faculty_collection=database.faculty
-@router.get("/dashboard/")
+@router.get("/dashboard")
 async def faculty_dashboard(date: str, user: dict = Depends(auth.get_current_user)):    
     """
     Optimized version: 

@@ -1,112 +1,109 @@
-from fastapi import Depends,FastAPI,HTTPException,status
-from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
-from pydantic import BaseModel
-from datetime import datetime,timedelta
-from jose import JWTError,jwt
-from passlib.context import CryptContext
+from fastapi import FastAPI,HTTPException,Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from routes import auth, admin, student, faculty,user
+from routes.model import get_embd,training
+from models.AdminModel import LoginCredentials
+from db import database
+from routes.auth import verify_password,generate_access_token,get_current_user
+#from  db  import database
 
-SECRET_KEY="db9c2516a45ba1440ab9bc243c1b0c0648348f60a2c83150ba79207801447a38"
-ALGORITHM="HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+# Use comments_collection in your CRUD operations
 
+app = FastAPI()
 
+# CORS middleware configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-db={
-    "student1":{
-        #For checking here I used password student123
-        "username":"student1",
-        "email":"student1@rguktrkv.ac.in",
-        "hashed_password":"$2b$12$r5ZUNTy/vdNECiIr8JpWdu1T9bXkg7HL.8rqhpyIBd20wU2Bl4/ga",
-        "disabled":False
-          
+@app.post('/login')
+async def login(data: LoginCredentials):
+    email = data.email.lower()
+    password = data.password
+    role = data.role.lower()
+
+    # Mapping roles to respective collections
+    role_collection_map = {
+        "admin": database.admin,
+        "faculty": database.faculty,
+        "student": database.student
     }
-}
-class Token(BaseModel):
-    access_token:str
-    token_type:str
 
-class TokenData(BaseModel):
-    username: str or None=None
-class User(BaseModel):
-    username:str or None=None
-    email:str or None=None
-    disabled: bool or None=None
-    
-class UserIndb(User):
-    hashed_password:str
-    
-pwd_context=CryptContext(schemes=["bcrypt"],deprecated="auto")
-oauth2_scheme=OAuth2PasswordBearer(tokenUrl="token")
+    if role not in role_collection_map:
+        raise HTTPException(status_code=400, detail="Invalid role specified")
 
-app=FastAPI(docs_url="/docs")
+    collection = role_collection_map[role]
 
-def verify_password(plain_password,hashed_password):
-    return pwd_context.verify(plain_password,hashed_password)
+    # Fetch user from the respective collection
+    user = await collection.find_one({"email_address": email})
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
-
-def get_user(db,username: str):
-    if username in db:
-        user_data=db[username]
-        return UserIndb(**user_data) #Here ** is used to fetch all the data of user form db as username=value like in dict we have : but here it  retrieves in for of =
-
-def authenticate_user(db,username:str,password:str):
-    user=get_user(db,username)
-    if not user:    
-        return False
-    if not verify_password(password,user.hashed_password):
-        return False
-    return user
-
-def create_access_token(data:dict,expires_delta:timedelta or None=None):
-    to_encode=data.copy() #Using copy because it will not alter original data if any changes made
-    if expires_delta:
-        expire=datetime.utcnow()+expires_delta
-    else:
-        expire=datetime.utcnow()+timedelta(minutes=15)
-    to_encode.update({"exp":expire})
-    encoded_jwt=jwt.encode(to_encode,SECRET_KEY,algorithm=ALGORITHM)
-    return encoded_jwt
-
-async def get_current_user(token:str=Depends(oauth2_scheme)):#This will take token and parse it
-    credentials_exception=HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Could not Validate credentials",headers={"WWW-Authenticate":"Bearer"})
-    try:
-        payload=jwt.decode(token,SECRET_KEY,algorithms=[ALGORITHM])
-        username:str=payload.get("sub")
-        if username is None:
-            raise credentials_exception
-            
-        token_data=TokenData(username=username)
-        
-    except JWTError:
-        raise credentials_exception
-    
-    user=get_user(db,username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    return user
-
-async def get_current_active_user(current_user:UserIndb =Depends(get_current_user)):
-    if current_user.disabled:
-        raise HTTPException(status_code=400,detail="Inactive User")
-    return current_user
-
-@app.post("/token",response_model=Token)
-async def login_for_access_token(form_data:OAuth2PasswordRequestForm =Depends()):
-    user =authenticate_user(db,form_data.username,form_data.password)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Incorrect Username or Password",headers={"WWW-Authenticate":"Bearer"})
-    access_token_expires=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token=create_access_token(data={"sub":user.username},expires_delta=access_token_expires)
-    return {"access_token":access_token,"token_type":"bearer"}
+        raise HTTPException(status_code=404, detail="User not found")
 
-@app.get("/users/me/",response_model=User)
-async def read_users_me(current_user:User =Depends(get_current_active_user)):
-    return current_user
+    # Verify password
+    if not verify_password(password, user["password"]):
+        raise HTTPException(status_code=401, detail="Incorrect password")
+    
+    token = await generate_access_token(email, role)
 
-@app.get("/users/me/items")
-async def read_own_items(current_user:User =Depends(get_current_active_user)):
-   return [{"item_is":1,"owner":current_user}]
+    return {"message": "Login successful", "token": token}
+    
+
+@app.get("/profile")
+async def profile(user: dict = Depends(get_current_user)):
+    if user['role'] == 'faculty':
+        faculty_data = await database.faculty.find_one({"email_address": user['email']})
+        if faculty_data:
+            faculty_data.pop("_id", None)
+            faculty_data.pop("password", None)
+        return faculty_data
+    
+    elif user['role'] == 'student':
+        student_data = await database.students.find_one({"email_address": user['email']})
+        if student_data:
+            student_data.pop("_id", None)
+            student_data.pop("password", None)
+        return student_data
+    
+    return {"error": "Invalid role"}
+
+        
+
+# Include routers from both your code and your friend's code
+app.include_router(auth.router, prefix="/auth", tags=["Auth"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(student.router, prefix="/student", tags=["Student"])
+app.include_router(faculty.router, prefix="/faculty", tags=["Faculty"])
+app.include_router(user.router,prefix='/user',tags=["User"])
+app.include_router(get_embd.router,prefix='/predict' , tags=['predict'])
+app.include_router(training.router,prefix='/capturing' , tags=['capturing'])
 
 
+# Mount static files for serving HTML 
+app.mount("/static", StaticFiles(directory="templates"), name="static")
+
+@app.get("/", tags=["Root"])
+async def root_message():
+    return {"message": "Welcome to the API. Use the docs to get started."}
+
+@app.get("/login", response_class=HTMLResponse, tags=["Login"])
+async def get_login_page():
+    with open("templates/login.html", "r") as file:
+        return HTMLResponse(content=file.read())
+
+# Uncomment and implement if needed
+# @app.get("/api")
+# async def api():
+#     temp = collection.find_one({})
+#     print(temp)
+#     return
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

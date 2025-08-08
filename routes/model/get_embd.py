@@ -36,7 +36,7 @@ class StudentRequest(BaseModel):
 
 # Load YOLOv8 face detector
 print("Loading YOLO model...")
-yolo_model = YOLO("C:\\Users\\Kalki\\Documents\\code\\FRS\\frs_backend\\FRS-Server\\app\\routes\\model\\locals\\yolo.pt")
+yolo_model = YOLO("C:\\Users\\Kalki\\Documents\\code\\FRS\\frs_backend\\FRS-Server\\routes\\model\\locals\\yolo.pt")
 print("YOLO model loaded.")
 
 # Load FaceNet model

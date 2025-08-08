@@ -77,6 +77,10 @@ def detect_faces_yolov8(image: np.ndarray):
     print(f"Detected {len(boxes)} faces.")
     return boxes
 
+def l2_normalize(x: np.ndarray, eps: float = 1e-10) -> np.ndarray:
+    norm = np.linalg.norm(x, ord=2)
+    return x / (norm + eps)
+
 # Function to extract embeddings using FaceNet
 def get_face_embedding(image: np.ndarray) -> np.ndarray:
     print("Extracting face embedding...")
@@ -84,8 +88,10 @@ def get_face_embedding(image: np.ndarray) -> np.ndarray:
     image = cv2.resize(image, (160, 160))
     image = np.expand_dims(image, axis=0)
     embedding = facenet_model.embeddings(image)
+    embedding = embedding.flatten()
+    embedding = l2_normalize(embedding)
     print(f"Embedding shape: {embedding.shape}")
-    return embedding.flatten()
+    return embedding
 
 # Fetch students from database and ensure consistent embedding format
 async def get_students_by_year_and_section(year: str, branch: str, section: str):
@@ -113,35 +119,47 @@ async def get_students_by_year_and_section(year: str, branch: str, section: str)
     return valid_students
 
 # Save multiple embeddings per student into FAISS index
+import numpy as np
+
+# L2-normalization helper
+def l2_normalize(x: np.ndarray, eps: float = 1e-10) -> np.ndarray:
+    norm = np.linalg.norm(x, ord=2, axis=-1, keepdims=True)
+    return x / (norm + eps)
+
+# Global FAISS index and storage lists
+stored_embeddings = []
+stored_ids = []
+# Assuming `index` is already created elsewhere, e.g.:
+# index = faiss.IndexFlatL2(embedding_dim)
+
 def save_student_embeddings(students):
     global stored_embeddings, stored_ids
     print("Saving student embeddings to FAISS...")
-
     embeddings_list = []
     ids_list = []
-
     for student in students:
         embeddings = student["embeddings"]  # List of 30 embeddings
         student_id = student["id_number"]
         print(f"Length of embeddings for {student_id}: {len(embeddings)}")
-        print(type(embeddings))
-        print("Length of embeddings[0]:", embeddings[0].shape)
-        print(type(embeddings[0]))
-        print(embeddings[0])
-        if isinstance(embeddings, list):  # Convert list of lists into NumPy array
+        # Ensure embeddings are a NumPy array of shape (N, D)
+        if isinstance(embeddings, list):
             embeddings = np.array(embeddings, dtype=np.float32)
-
-        for embedding in embeddings:
-            embeddings_list.append(embedding.flatten())
+        for emb in embeddings:
+            emb_flat = emb.flatten().astype(np.float32)
+            embeddings_list.append(emb_flat)
             ids_list.append(student_id)
 
-    if len(embeddings_list) > 0:
-        embeddings_np = np.array(embeddings_list, dtype=np.float32)  # Ensure it's a proper 2D NumPy array
+    if embeddings_list:
+        # Stack into (M, D)
+        embeddings_np = np.vstack(embeddings_list)
         print(f"Adding {embeddings_np.shape[0]} embeddings of shape {embeddings_np.shape[1]} to FAISS index...")
-        index.add(embeddings_np)  # FAISS requires a 2D NumPy array
+        embeddings_np = l2_normalize(embeddings_np)
+        index.add(embeddings_np)
         stored_embeddings.extend(embeddings_list)
         stored_ids.extend(ids_list)
         print("FAISS indexing complete.")
+    else:
+        print("No embeddings to add.")
 
 
 # WebSocket endpoint for handling real-time attendance
@@ -178,26 +196,37 @@ async def websocket_endpoint(websocket: WebSocket):
                 query_embedding = get_face_embedding(face_image)
 
                 # Search across all embeddings
-                D, I = index.search(np.array([query_embedding], dtype=np.float32), k=5)
+                D, I = index.search(np.array([query_embedding], dtype=np.float32), k=3)
+                print("Distance: ", D)
                 
                 matched_students = []
-                for idx in I[0]:  # Check multiple embeddings per student
-                    if idx < len(stored_ids):
+                for dist, idx in zip(D[0], I[0]):  # Check multiple embeddings per student
+                    if dist <= 0.39 and idx < len(stored_ids):
                         student_id = stored_ids[idx]
                         matched_students.append(student_id)
 
                 # If a match is found, retrieve student details
-                for student_id in set(matched_students):
-                    student = await students_collection.find_one({"id_number": student_id})
-                    if student:
-                        recognized_students.append({
-                            "x": x,
-                            "y": y,
-                            "w": w,
-                            "h": h,
-                            "id_number": student["id_number"],
-                            "name": f"{student.get('first_name', 'Unknown')} {student.get('last_name', '')}".strip(),
-                        })
+                if not matched_students:
+                    recognized_students.append({
+                        "x": x,
+                        "y": y,
+                        "w": w,
+                        "h": h,
+                        "id_number": "Unknown",
+                        "name": "Unknown"
+                    })
+                else:
+                    for student_id in set(matched_students):
+                        student = await students_collection.find_one({"id_number": student_id})
+                        if student:
+                            recognized_students.append({
+                                "x": x,
+                                "y": y,
+                                "w": w,
+                                "h": h,
+                                "id_number": student["id_number"],
+                                "name": f"{student.get('first_name', 'Unknown')} {student.get('last_name', '')}".strip(),
+                            })
 
             print(f"Recognized {len(recognized_students)} students.")
             print(recognized_students)
